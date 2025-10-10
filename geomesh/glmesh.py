@@ -5,7 +5,9 @@
 import math
 from dataclasses import dataclass
 
+import geopandas as gpd
 import pyproj
+import shapely
 import yaml
 
 from .data import XY, Bounds
@@ -151,7 +153,8 @@ class TileDesigner(object):
         if self.height <= 0:
             raise ValueError("heightは正の整数で指定してください。")
 
-    def _lonlat_to_tile_idx(
+    @type_checker_crs(arg_index=4, kward="in_crs")
+    def lonlat_to_tile_idx(
         self,
         lon: float,
         lat: float,
@@ -212,8 +215,7 @@ class TileDesigner(object):
     @type_checker_float(arg_index=2, kward="lat")
     @type_checker_integer(arg_index=3, kward="zoom_level")
     @type_checker_zoom_level(arg_index=3, kward="zoom_level")
-    @type_checker_crs(arg_index=4, kward="in_crs")
-    def design_from_lonlat(
+    def from_lonlat(
         self,  #
         lon: float,
         lat: float,
@@ -224,7 +226,7 @@ class TileDesigner(object):
         ## Summary:
             経緯度とズームレベルからタイルデザインを生成する関数。
         """
-        tile_idx = self._lonlat_to_tile_idx(lon, lat, zoom_level, in_crs)
+        tile_idx = self.lonlat_to_tile_idx(lon, lat, zoom_level, in_crs)
         bounds = self._tile_idx_to_bounds(tile_idx["x"], tile_idx["y"], zoom_level)
         return TileDesign(
             zoom_level=zoom_level,
@@ -239,7 +241,7 @@ class TileDesigner(object):
     @type_checker_integer(arg_index=2, kward="y")
     @type_checker_integer(arg_index=3, kward="zoom_level")
     @type_checker_zoom_level(arg_index=3, kward="zoom_level")
-    def design_from_tile_idx(self, x: int, y: int, zoom_level: int) -> TileDesign:
+    def from_tile_idx(self, x: int, y: int, zoom_level: int) -> TileDesign:
         """
         ## Summary:
             タイルインデックスとズームレベルからタイルデザインを生成する関数。
@@ -261,7 +263,7 @@ class TileDesigner(object):
     @type_checker_integer(arg_index=5, kward="zoom_level")
     @type_checker_zoom_level(arg_index=5, kward="zoom_level")
     @type_checker_crs(arg_index=6, kward="in_crs")
-    def design_tiles(
+    def tiles(
         self,
         x_min: float,
         y_min: float,
@@ -269,7 +271,8 @@ class TileDesigner(object):
         y_max: float,
         zoom_level: int,
         in_crs: pyproj.CRS = pyproj.CRS.from_epsg(4326),
-    ) -> list[TileDesign]:
+        geodataframe: bool = False,
+    ) -> list[TileDesign] | gpd.GeoDataFrame:
         """
         ## Summary:
             タイルインデックスの範囲とズームレベルからタイルデザインのリストを生成する関数。
@@ -286,17 +289,40 @@ class TileDesigner(object):
                 ズームレベル
             in_crs (pyproj.CRS):
                 入力座標系。デフォルトはEPSG:4326（経緯度）
+            geodataframe (bool):
+                タイルデザインのリストをGeoPandasのDataFrameとして返すかどうか。デフォルトはFalse。
         Returns:
             list[TileDesign]:
                 タイルデザインのリスト
         """
         # 左下と右上のタイルインデックスを取得
-        sw_tile_idx = self._lonlat_to_tile_idx(x_min, y_min, zoom_level, in_crs)
-        ne_tile_idx = self._lonlat_to_tile_idx(x_max, y_max, zoom_level, in_crs)
+        sw_tile_idx = self.lonlat_to_tile_idx(x_min, y_min, zoom_level, in_crs)
+        ne_tile_idx = self.lonlat_to_tile_idx(x_max, y_max, zoom_level, in_crs)
         # タイルインデックスの範囲内でタイルデザインを生成
         designs = []
         for x_idx in range(sw_tile_idx["x"], ne_tile_idx["x"] + 1):
             for y_idx in range(ne_tile_idx["y"], sw_tile_idx["y"] + 1):
-                design = self.design_from_tile_idx(x_idx, y_idx, zoom_level)
+                design = self.from_tile_idx(x_idx, y_idx, zoom_level)
                 designs.append(design)
+        if geodataframe:
+            return self._tiles_to_dataframe(designs)
         return designs
+
+    def _tiles_to_dataframe(self, designs: list[TileDesign]) -> gpd.GeoDataFrame:
+        """
+        ## Summary:
+            タイルデザインのリストをGeoPandasのDataFrameに変換する関数。
+        Args:
+            designs (list[TileDesign]):
+                タイルデザインのリスト
+        """
+        data = {
+            "zoom_level": [design.zoom_level for design in designs],
+            "x_idx": [design.x_idx for design in designs],
+            "y_idx": [design.y_idx for design in designs],
+            "x_resolution": [design.x_resolution for design in designs],
+            "y_resolution": [design.y_resolution for design in designs],
+        }
+        polys = [shapely.box(*design.bounds) for design in designs]
+        df = gpd.GeoDataFrame(data=data, geometry=polys, crs=self.crs)
+        return df
