@@ -12,4 +12,5 @@ __all__ = [
     "transform_xy",
     "TileDesign",
     "TileDesigner",
+    "generate_mesh_design",
 ]

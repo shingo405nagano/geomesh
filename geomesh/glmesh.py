@@ -253,3 +253,44 @@ class TileDesigner(object):
             width=self.width,
             height=self.height,
         )
+
+
+def generate_mesh_design(
+    x_min: float,
+    y_min: float,
+    x_max: float,
+    y_max: float,
+    zoom_level: int,
+    in_crs: pyproj.CRS = pyproj.CRS.from_epsg(4326),
+) -> list[TileDesign]:
+    """
+    ## Summary:
+        指定した範囲とズームレベルに基づいて、タイルメッシュの設計を生成する関数。
+    Args:
+        x_min (float):
+            範囲の最小x座標（経度）
+        y_min (float):
+            範囲の最小y座標（緯度）
+        x_max (float):
+            範囲の最大x座標（経度）
+        y_max (float):
+            範囲の最大y座標（緯度）
+        zoom_level (int):
+            ズームレベル
+        in_crs (pyproj.CRS):
+            入力座標系。デフォルトはEPSG:4326（経緯度）
+    Returns:
+        list[TileDesign]:
+            タイルメッシュの設計のリスト
+    """
+    tile_designer = TileDesigner()
+    # 左下と右上のタイルインデックスを取得
+    sw_tile_idx = tile_designer._lonlat_to_tile_idx(x_min, y_min, zoom_level, in_crs)
+    ne_tile_idx = tile_designer._lonlat_to_tile_idx(x_max, y_max, zoom_level, in_crs)
+    # タイルインデックスの範囲内でタイルデザインを生成
+    designs = []
+    for x_idx in range(sw_tile_idx["x"], ne_tile_idx["x"] + 1):
+        for y_idx in range(ne_tile_idx["y"], sw_tile_idx["y"] + 1):
+            design = tile_designer.design_from_tile_idx(x_idx, y_idx, zoom_level)
+            designs.append(design)
+    return designs

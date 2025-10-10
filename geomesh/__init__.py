@@ -1,4 +1,4 @@
-from .data import XY, XYZ, Bounds, MeshDesignJP
+from .data import XY, XYZ, Bounds
 from .formatter import (
     type_checker_crs,
     type_checker_decimal,
@@ -6,4 +6,4 @@ from .formatter import (
     type_checker_integer,
 )
 from .geometries import transform_xy
-from .glmesh import TileDesign, TileDesigner
+from .glmesh import TileDesign, TileDesigner, generate_mesh_design
