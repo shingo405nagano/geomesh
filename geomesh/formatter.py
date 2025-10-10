@@ -6,7 +6,7 @@ import pyproj
 
 def _intermediate(arg_index, kward, *args, **kwargs) -> dict[str, Any]:
     """
-    ## Description:
+    ## Summary:
         引数が args にあるか kwargs にあるかを判定するヘルパー関数。
     ## Args:
         arg_index (int):
@@ -35,7 +35,7 @@ def _intermediate(arg_index, kward, *args, **kwargs) -> dict[str, Any]:
 
 def _return_value(value: Any, data: dict[str, Any], args, kwargs) -> Any:
     """
-    ## Description:
+    ## Summary:
         Helper function to return the modified args and kwargs after type checking.
     ## Args:
         value (Any):
@@ -60,7 +60,7 @@ def _return_value(value: Any, data: dict[str, Any], args, kwargs) -> Any:
 
 def type_checker_float(arg_index: int, kward: str):
     """
-    ## Description:
+    ## Summary:
         引数が浮動小数点数か浮動小数点数に変換可能かをチェックするデコレーター。
     ## Args:
         arg_index (int):
@@ -96,7 +96,7 @@ def type_checker_float(arg_index: int, kward: str):
 
 def type_checker_integer(arg_index: int, kward: str):
     """
-    ## Description:
+    ## Summary:
         関数の引数が整数か、整数に変換可能かをチェックするデコレーター。
     ## Args:
         arg_index (int):
@@ -132,7 +132,7 @@ def type_checker_integer(arg_index: int, kward: str):
 
 def type_checker_decimal(arg_index: int, kward: str):
     """
-    ## Description:
+    ## Summary:
         関数の引数がDecimalオブジェクトか、Decimalに変換可能な値かをチェックするデコレーター。
         Decimalは浮動小数点数の精度を保つために使用されます。
     ## Args:
@@ -171,7 +171,7 @@ def type_checker_decimal(arg_index: int, kward: str):
 
 def type_checker_crs(arg_index: int, kward: str):
     """
-    ## Description:
+    ## Summary:
         関数の引数がpyproj.CRSオブジェクトか、CRSに変換可能な文字列かをチェックするデコレーター。
     ## Args:
         arg_index (int):
@@ -213,7 +213,7 @@ def type_checker_zoom_level(
     arg_index: int, kward: str, min_zl: int = 0, max_zl: int = 24
 ):
     """
-    ## Description:
+    ## Summary:
         関数の引数がズームレベルを表す整数か、整数に変換可能かをチェックするデコレーター。
     ## Args:
         arg_index (int):
@@ -245,6 +245,41 @@ def type_checker_zoom_level(
                 raise TypeError(
                     f"Argument '{kward}' must be an integer or convertible to integer, got {type(value)}"
                 ) from e
+            else:
+                result = _return_value(value, data, args, kwargs)
+                return func(*result["args"], **result["kwargs"])
+
+        return wrapper
+
+    return decorator
+
+
+def valid_names(arg_index: int, kward: str, valid_names: list[str]):
+    """
+    ## Summary:
+        関数の引数が指定された有効な名前のリストに含まれているかをチェックするデコレーター。
+    Args:
+        arg_index (int):
+            位置引数のインデックスを指定。
+        kward (str):
+            キーワード引数の名前を指定。
+        valid_names (list[str]):
+            有効な名前のリスト。
+    Returns:
+        str:
+            有効な名前に変換された引数の値。
+    """
+
+    def decorator(func):
+        def wrapper(*args, **kwargs):
+            data = _intermediate(arg_index, kward, *args, **kwargs)
+            data["arg_index"] = arg_index
+            data["kward"] = kward
+            value = data["value"]
+            if value not in valid_names:
+                raise ValueError(
+                    f"Argument '{kward}' must be one of {valid_names}, got '{value}'"
+                )
             else:
                 result = _return_value(value, data, args, kwargs)
                 return func(*result["args"], **result["kwargs"])

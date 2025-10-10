@@ -11,7 +11,7 @@ import shapely
 import yaml
 
 from .data import Bounds
-from .formatter import type_checker_float
+from .formatter import type_checker_float, valid_names
 from .geometries import dms_to_degree_lonlat
 
 decimal.getcontext().prec = 13
@@ -261,7 +261,11 @@ class MeshCodeJP(object):
 
 
 def generate_jpmesh(
-    x_min: float, y_min: float, x_max: float, y_max: float, mesh_size: str
+    x_min: float,  #
+    y_min: float,
+    x_max: float,
+    y_max: float,
+    mesh_name: str,
 ) -> gpd.GeoDataFrame:
     """
     ## Summary:
@@ -275,169 +279,139 @@ def generate_jpmesh(
             範囲の最大経度（10進法）
         y_max (float):
             範囲の最大緯度（10進法）
-        mesh_size (str):
-            生成するメッシュのサイズ。'1st', '2nd', 'standard', 'half', 'quarter'のいずれか。
+        mesh_name (str):
+            生成するメッシュの名前。'1st', '2nd', 'standard', 'half', 'quarter'のいずれか。
     Returns:
         gpd.GeoDataFrame:
             生成された地域メッシュのGeoDataFrame
     """
-    from shapely.geometry import Polygon
-
-    # メッシュサイズの検証
-    valid_sizes = ["1st", "2nd", "standard", "half", "quarter"]
-    if mesh_size not in valid_sizes:
-        raise ValueError(f"mesh_size must be one of {valid_sizes}, got: {mesh_size}")
-
     # 範囲の検証
     if x_min >= x_max or y_min >= y_max:
         raise ValueError("Invalid range: min values must be less than max values")
-
-    # メッシュ
-
-    meshes = []
+    # 範囲をメッシュの刻みに合わせて調整
+    bounds = _resize_mesh(x_min, y_min, x_max, y_max, mesh_name)
+    # メッシュのステップ値を取得
+    steps = _get_step(mesh_name)
+    step_lon = steps["lon"]
+    step_lat = steps["lat"]
+    # メッシュコードとジオメトリのリストを初期化
     mesh_codes = []
-
-    # メッシュサイズに応じた処理分岐
-    if mesh_size == "1st":
-        # 第1次メッシュの生成
-        lat_start = int(y_min * 60 / 40)
-        lat_end = int(y_max * 60 / 40) + 1
-        lon_start = int(x_min) - 100
-        lon_end = int(x_max) - 100 + 1
-
-        for lat_code in range(lat_start, lat_end):
-            for lon_code in range(lon_start, lon_end):
-                if lat_code < 0 or lon_code < 0:
-                    continue
-
-                mesh_code = f"{lat_code:02d}{lon_code:02d}"
-
-                # メッシュ境界を計算
-                mesh_obj = MeshCodeJP(
-                    100 + lon_code + 0.5, lat_code * 40 / 60 + 20 / 60, False
+    geometries = []
+    # 指定された範囲内でメッシュコードを生成
+    lon = bounds.x_min
+    while lon < bounds.x_max:
+        lat = bounds.y_min
+        while lat < bounds.y_max:
+            mesh = MeshCodeJP(lon, lat)
+            if mesh_name == "1st":
+                mesh_code = mesh.first_mesh_code
+                mesh_bounds = mesh.first_mesh()
+            elif mesh_name == "2nd":
+                mesh_code = mesh.secandary_mesh_code
+                mesh_bounds = mesh.secandary_mesh()
+            elif mesh_name == "standard":
+                mesh_code = mesh.standard_mesh_code
+                mesh_bounds = mesh.standard_mesh()
+            elif mesh_name == "half":
+                mesh_code = mesh.half_mesh_code
+                mesh_bounds = mesh.half_mesh()
+            elif mesh_name == "quarter":
+                mesh_code = mesh.quarter_mesh_code
+                mesh_bounds = mesh.quarter_mesh()
+            else:
+                raise ValueError(
+                    f"mesh_name must be one of ['1st', '2nd', 'standard', 'half', 'quarter'], got: {mesh_name}"
                 )
-                if mesh_obj.first_mesh_code == mesh_code:
-                    bounds = mesh_obj.first_mesh()
-
-                    # 範囲内かチェック
-                    polygon = Polygon(
-                        [
-                            (bounds.x_min, bounds.y_min),
-                            (bounds.x_max, bounds.y_min),
-                            (bounds.x_max, bounds.y_max),
-                            (bounds.x_min, bounds.y_max),
-                        ]
-                    )
-                    meshes.append(polygon)
-                    mesh_codes.append(mesh_code)
-
-    elif mesh_size == "2nd":
-        # 第2次メッシュの生成
-        _generate_mesh_grid(x_min, y_min, x_max, y_max, "2nd", meshes, mesh_codes)
-
-    elif mesh_size == "standard":
-        # 基準地域メッシュの生成
-        _generate_mesh_grid(x_min, y_min, x_max, y_max, "standard", meshes, mesh_codes)
-
-    elif mesh_size == "half":
-        # 2分の1地域メッシュの生成
-        _generate_mesh_grid(x_min, y_min, x_max, y_max, "half", meshes, mesh_codes)
-
-    elif mesh_size == "quarter":
-        # 4分の1地域メッシュの生成
-        _generate_mesh_grid(x_min, y_min, x_max, y_max, "quarter", meshes, mesh_codes)
-
+            # メッシュコードとジオメトリをリストに追加
+            mesh_codes.append(mesh_code)
+            geom = shapely.box(*mesh_bounds)
+            geometries.append(geom)
+            lat += step_lat
+        lon += step_lon
     # GeoDataFrameを作成
     gdf = gpd.GeoDataFrame(
-        {"mesh_code": mesh_codes, "geometry": meshes}, crs="EPSG:4326"
+        data={"mesh_code": mesh_codes}, geometry=geometries, crs="EPSG:4326"
     )
-
     return gdf
 
 
-def _generate_mesh_grid(
-    x_min: float,
-    y_min: float,
-    x_max: float,
-    y_max: float,
-    mesh_size: str,
-    meshes: list,
-    mesh_codes: list,
+def _get_step(mesh_name: str) -> dict[str, float]:
+    """
+    ## Summary:
+        メッシュの種類に応じた経度・緯度のステップ値を取得するヘルパー関数
+    Args:
+        mesh_name (str):
+            メッシュの種類。'1st', '2nd', 'standard', 'half', 'quarter'のいずれか。
+    Returns:
+        dict[str, float]:
+            - lon: 経度方向のステップ値
+            - lat: 緯度方向のステップ値
+    """
+    steps = {
+        "1st": {
+            "lon": 1.0,
+            "lat": 40 / 60,  # 40分
+        },
+        "2nd": {
+            "lon": 7.5 / 60,  # 7.5分
+            "lat": 5 / 60,  # 5分
+        },
+        "standard": {
+            "lon": 0.75 / 60,  # 45秒
+            "lat": 0.5 / 60,  # 30秒
+        },
+        "half": {
+            "lon": 0.375 / 60,  # 22.5秒
+            "lat": 0.25 / 60,  # 15秒
+        },
+        "quarter": {
+            "lon": 0.1875 / 60,  # 11.25
+            "lat": 0.125 / 60,  # 7.5秒
+        },
+    }
+    if mesh_name not in steps:
+        raise ValueError(
+            f"mesh_name must be one of {list(steps.keys())}, got: {mesh_name}"
+        )
+    return steps[mesh_name]
+
+
+@valid_names(
+    arg_index=4,
+    kward="mesh_name",
+    valid_names=["1st", "2nd", "standard", "half", "quarter"],
+)
+def _resize_mesh(
+    x_min: float, y_min: float, x_max: float, y_max: float, mesh_name: str
 ):
     """
     ## Summary:
-        メッシュグリッドを生成するヘルパー関数
+        地域メッシュの刻みに応じて範囲を調整するヘルパー関数
+        例えば、基準地域メッシュの場合、経度方向に7.5分、緯度方向に5分の倍数に調整します。
+    Args:
+        x_min (float):
+            範囲の最小経度（10進法）
+        y_min (float):
+            範囲の最小緯度（10進法）
+        x_max (float):
+            範囲の最大経度（10進法）
+        y_max (float):
+            範囲の最大緯度（10進法）
+        mesh_name (str):
+            メッシュの種類。'1st', '2nd', 'standard', 'half', 'quarter'のいずれか。
+    Returns:
+        Bounds:
+            調整された範囲の境界
     """
-
-    # サンプリング間隔を決定（メッシュサイズの1/4程度）
-    if mesh_size == "2nd":
-        step = 0.02  # 約2分間隔
-    elif mesh_size == "standard":
-        step = 0.002  # 約0.2分間隔
-    elif mesh_size == "half":
-        step = 0.001  # 約0.1分間隔
-    elif mesh_size == "quarter":
-        step = 0.0005  # 約0.05分間隔
-    else:
-        step = 0.01
-
-    processed_codes = set()
-
-    # サンプリング範囲を少し拡張して境界のメッシュを確実に取得
-    # メッシュサイズに応じた適切な拡張量を設定
-    if mesh_size == "2nd":
-        margin = 0.1  # 第2次メッシュサイズの約1.5倍
-    elif mesh_size == "standard":
-        margin = 0.015  # 基準地域メッシュサイズの約1.5倍
-    elif mesh_size == "half":
-        margin = 0.008  # 2分の1メッシュサイズの約1.5倍
-    elif mesh_size == "quarter":
-        margin = 0.004  # 4分の1メッシュサイズの約1.5倍
-    else:
-        margin = 0.02
-
-    # 拡張された範囲でサンプリング
-    lat = y_min - margin
-    while lat <= y_max + margin:
-        lon = x_min - margin
-        while lon <= x_max + margin:
-            try:
-                mesh_obj = MeshCodeJP(lon, lat, False)
-
-                # メッシュサイズに応じてメッシュコードと境界を取得
-                if mesh_size == "2nd":
-                    code = mesh_obj.secandary_mesh_code
-                    bounds = mesh_obj.secandary_mesh()
-                elif mesh_size == "standard":
-                    code = mesh_obj.standard_mesh_code
-                    bounds = mesh_obj.standard_mesh()
-                elif mesh_size == "half":
-                    code = mesh_obj.half_mesh_code
-                    bounds = mesh_obj.half_mesh()
-                elif mesh_size == "quarter":
-                    code = mesh_obj.quarter_mesh_code
-                    bounds = mesh_obj.quarter_mesh()
-                else:
-                    lon += step
-                    continue
-
-                # 重複チェック
-                if code not in processed_codes:
-                    # 範囲内チェック
-                    if (
-                        bounds.x_max > x_min
-                        and bounds.x_min < x_max
-                        and bounds.y_max > y_min
-                        and bounds.y_min < y_max
-                    ):
-                        polygon = shapely.box(*bounds)
-                        meshes.append(polygon)
-                        mesh_codes.append(code)
-                        processed_codes.add(code)
-
-            except (ValueError, ZeroDivisionError):
-                # 無効な座標の場合はスキップ
-                pass
-
-            lon += step
-        lat += step
+    steps = _get_step(mesh_name)
+    step_lon = steps["lon"]
+    step_lat = steps["lat"]
+    x_min_resized = x_min - (x_min % step_lon)
+    y_min_resized = y_min - (y_min % step_lat)
+    x_max_resized = (
+        x_max + (step_lon - (x_max % step_lon)) if (x_max % step_lon) != 0 else x_max
+    )
+    y_max_resized = (
+        y_max + (step_lat - (y_max % step_lat)) if (y_max % step_lat) != 0 else y_max
+    )
+    return Bounds(x_min_resized, y_min_resized, x_max_resized, y_max_resized)
