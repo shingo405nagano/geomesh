@@ -1,3 +1,4 @@
+from decimal import Decimal
 from typing import Iterable
 
 import pyproj
@@ -37,3 +38,72 @@ def transform_xy(
     if isinstance(x, Iterable):
         return [XY(x=lon_i, y=lat_i) for lon_i, lat_i in zip(lon, lat, strict=False)]
     return XY(x=lon, y=lat)
+
+
+def dms_to_degree(
+    dms: float,  #
+    digits: int = 9,
+    decimal_obj: bool = False,
+) -> float | Decimal:
+    """
+    ## Summary:
+        度分秒経緯度を10進法経緯度に変換する関数
+    Args:
+        dms (float):
+            度分秒経緯度
+        digits (int):
+            小数点以下の桁数
+        decimal_obj (bool):
+            10進法経緯度をDecimal型で返すかどうか
+    Returns:
+        float | Decimal:
+            10進法経緯度
+    """
+    try:
+        dms = float(dms)
+    except ValueError as err:
+        raise ValueError("dms must be a float or convertible to float.") from err
+    dms_txt = str(dms)
+    sep = "."
+    integer_part, decimal_part = dms_txt.split(sep)
+    micro_sec = float(f"0.{decimal_part}")
+    if len(integer_part) < 6 or 7 < len(integer_part):
+        raise ValueError(f"dms must have a 6- or 7-digit integer part. Arg: {dms}")
+    sec = Decimal(f"{(int(integer_part[-2:]) + micro_sec) / 3600}")
+    min_ = Decimal(f"{int(integer_part[-4:-2]) / 60}")
+    deg = Decimal(f"{float(int(integer_part[:-4]))}")
+    if decimal_obj:
+        return round(deg + min_ + sec, digits)
+    return float(round(deg + min_ + sec, digits))
+
+
+def dms_to_degree_lonlat(
+    lon: float,  #
+    lat: float,
+    digits: int = 9,
+    decimal_obj: bool = False,
+) -> XY:
+    """
+    ## Summary:
+        度分秒経緯度を10進法経緯度に変換する関数
+    Args:
+        lon (float):
+            度分秒経緯度
+        lat (float):
+            度分秒経緯度
+        digits (int):
+            小数点以下の桁数
+        decimal_obj (bool):
+            Decimal型で返すかどうか
+    Returns:
+        XY(NamedTuple):
+            10進法経緯度
+            - x: float | Decimal
+            - y: float | Decimal
+    Example:
+        >>> dms_to_degree_lonlat(140516.27814, 36103600.00000)
+        (140.087855042, 36.103774792)
+    """
+    deg_lon = dms_to_degree(lon, digits, decimal_obj)
+    deg_lat = dms_to_degree(lat, digits, decimal_obj)
+    return XY(x=deg_lon, y=deg_lat)
