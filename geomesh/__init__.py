@@ -6,4 +6,6 @@ from .formatter import (
     type_checker_integer,
 )
 from .geometries import transform_xy
-from .glmesh import TileDesign, TileDesigner, generate_mesh_design
+from .glmesh import TileDesign, TileDesigner
+
+tile_designer = TileDesigner()

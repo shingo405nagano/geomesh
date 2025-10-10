@@ -11,6 +11,6 @@ __all__ = [
     "type_checker_integer",
     "transform_xy",
     "TileDesign",
-    "TileDesigner",
+    "tile_designer",
     "generate_mesh_design",
 ]
