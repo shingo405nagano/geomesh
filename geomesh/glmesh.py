@@ -4,6 +4,7 @@
 
 import math
 from dataclasses import dataclass
+from typing import Optional
 
 import geopandas as gpd
 import pyproj
@@ -27,7 +28,8 @@ global FLOOR_NUM
 FLOOR_NUM = 10**DECIMAL_PLACES
 
 
-def floor(value: float) -> float:
+@type_checker_integer(arg_index=1, kward="decimal_place")
+def floor(value: float, decimal_place: Optional[int] = None) -> float:
     """
     ## Summary:
         指定した小数点以下の桁数で値を切り捨てる関数。
@@ -38,7 +40,9 @@ def floor(value: float) -> float:
         float:
             切り捨てられた値
     """
-    return math.floor(value * FLOOR_NUM) / FLOOR_NUM
+    if decimal_place is None:
+        decimal_place = FLOOR_NUM
+    return math.floor(value * decimal_place) / decimal_place  # type: ignore
 
 
 # Webメルカトルの座標範囲
