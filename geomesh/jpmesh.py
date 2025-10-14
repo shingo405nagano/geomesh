@@ -74,7 +74,8 @@ class MeshCodeJP(object):
         secandary_lon_code = str(int(v))
         standard_lon_code = str(int(w))
         m = str(int((s * 2) + (x + 1)))
-        n = str(int((t * 2) + (y + 1)))
+        lat_in_half = int(d / 7.5)
+        n = str(int((lat_in_half * 2) + (y + 1)))
         first_mesh_code = first_lat_code + first_lon_code
         secandary_mesh_code = first_mesh_code + secandary_lat_code + secandary_lon_code
         standard_mesh_code = secandary_mesh_code + standard_lat_code + standard_lon_code
@@ -295,8 +296,7 @@ def generate_jpmesh(
     step_lon = steps["lon"]
     step_lat = steps["lat"]
     # メッシュコードとジオメトリのリストを初期化
-    mesh_codes = []
-    geometries = []
+    mesh_dict = {}  # 重複チェック用辞書
     # 指定された範囲内でメッシュコードを生成
     lon = bounds.x_min
     while lon < bounds.x_max:
@@ -322,12 +322,16 @@ def generate_jpmesh(
                 raise ValueError(
                     f"mesh_name must be one of ['1st', '2nd', 'standard', 'half', 'quarter'], got: {mesh_name}"
                 )
-            # メッシュコードとジオメトリをリストに追加
-            mesh_codes.append(mesh_code)
-            geom = shapely.box(*mesh_bounds)
-            geometries.append(geom)
+            # 重複チェック：まだ追加されていないメッシュコードのみ追加
+            if mesh_code not in mesh_dict:
+                geom = shapely.box(*mesh_bounds)
+                mesh_dict[mesh_code] = geom
             lat += step_lat
         lon += step_lon
+
+    # 辞書からリストに変換
+    mesh_codes = list(mesh_dict.keys())
+    geometries = list(mesh_dict.values())
     # GeoDataFrameを作成
     gdf = gpd.GeoDataFrame(
         data={"mesh_code": mesh_codes}, geometry=geometries, crs="EPSG:4326"
@@ -361,12 +365,12 @@ def _get_step(mesh_name: str) -> dict[str, float]:
             "lat": 0.5 / 60,  # 30秒
         },
         "half": {
-            "lon": 0.375 / 60,  # 22.5秒
-            "lat": 0.25 / 60,  # 15秒
+            "lon": 0.375 / 60 / 3,  # 22.5秒の1/3 = 7.5秒
+            "lat": 0.25 / 60 / 3,  # 15秒の1/3 = 5秒
         },
         "quarter": {
-            "lon": 0.1875 / 60,  # 11.25
-            "lat": 0.125 / 60,  # 7.5秒
+            "lon": 0.1875 / 60 / 10,  # 11.25秒の1/10 = 約1.125秒
+            "lat": 0.125 / 60 / 10,  # 7.5秒の1/10 = 約0.75秒
         },
     }
     if mesh_name not in steps:
