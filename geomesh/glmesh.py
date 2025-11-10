@@ -4,7 +4,6 @@
 
 import math
 from dataclasses import dataclass
-from typing import Optional
 
 import geopandas as gpd
 import pyproj
@@ -28,8 +27,8 @@ global FLOOR_NUM
 FLOOR_NUM = 10**DECIMAL_PLACES
 
 
-@type_checker_integer(arg_index=1, kward="decimal_place")
-def floor(value: float, decimal_place: Optional[int] = None) -> float:
+@type_checker_integer(arg_index=0, kward="value")
+def floor(value: float) -> float:
     """
     ## Summary:
         指定した小数点以下の桁数で値を切り捨てる関数。
@@ -40,9 +39,7 @@ def floor(value: float, decimal_place: Optional[int] = None) -> float:
         float:
             切り捨てられた値
     """
-    if decimal_place is None:
-        decimal_place = FLOOR_NUM
-    return math.floor(value * decimal_place) / decimal_place  # type: ignore
+    return math.floor(value * FLOOR_NUM) / FLOOR_NUM  # type: ignore
 
 
 # Webメルカトルの座標範囲
@@ -274,7 +271,7 @@ class TileDesigner(object):
         x_max: float,
         y_max: float,
         zoom_level: int,
-        in_crs: pyproj.CRS = pyproj.CRS.from_epsg(4326),
+        in_crs: pyproj.CRS | int | str = pyproj.CRS.from_epsg(4326),
         geodataframe: bool = False,
     ) -> list[TileDesign] | gpd.GeoDataFrame:
         """
@@ -328,5 +325,8 @@ class TileDesigner(object):
             "y_resolution": [design.y_resolution for design in designs],
         }
         polys = [shapely.box(*design.bounds) for design in designs]
-        df = gpd.GeoDataFrame(data=data, geometry=polys, crs=self.crs)
-        return df
+        gdf = gpd.GeoDataFrame(data=data, geometry=polys, crs=self.crs)
+        gdf["zxy"] = gdf.apply(
+            lambda row: f"{row.zoom_level}/{row.x_idx}/{row.y_idx}", axis=1
+        )
+        return gdf
