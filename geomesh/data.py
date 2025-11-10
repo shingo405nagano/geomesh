@@ -2,15 +2,14 @@
 Dataクラスの定義
 """
 
-from decimal import Decimal
 from typing import NamedTuple
 
 
 class XY(NamedTuple):
     """2次元座標を格納するクラス"""
 
-    x: float | Decimal
-    y: float | Decimal
+    x: float
+    y: float
 
 
 class XYZ(NamedTuple):
@@ -40,3 +39,14 @@ class Bounds(NamedTuple):
     y_min: float
     x_max: float
     y_max: float
+
+
+class Hexagon(NamedTuple):
+    """六角形の各頂点の座標を格納するクラス"""
+
+    top: XY
+    right_top: XY
+    right_bottom: XY
+    bottom: XY
+    left_bottom: XY
+    left_top: XY
