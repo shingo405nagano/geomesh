@@ -525,3 +525,199 @@ def _resize_mesh(
         y_max + (step_lat - (y_max % step_lat)) if (y_max % step_lat) != 0 else y_max
     )
     return Bounds(x_min_resized, y_min_resized, x_max_resized, y_max_resized)
+
+
+class MeshCodeTo(object):
+    def _check_mesh_code(self, mesh_code: str):
+        if not isinstance(mesh_code, str):
+            raise TypeError("mesh_code must be a string")
+        if len(mesh_code) == 4:
+            self.mesh_type = "1st"
+        elif len(mesh_code) == 6:
+            self.mesh_type = "2nd"
+        elif len(mesh_code) == 8:
+            self.mesh_type = "standard"
+        elif len(mesh_code) == 9:
+            self.mesh_type = "half"
+        elif len(mesh_code) == 10:
+            self.mesh_type = "quarter"
+        else:
+            raise ValueError("Invalid mesh code length")
+
+    def to_bounds(self, mesh_code: str) -> Bounds:
+        """
+        ## Summary:
+            メッシュコードから境界を取得する関数。メッシュコードの種類に応じて適切な境界を返します。
+        Args:
+            mesh_code (str):
+                メッシュコード
+        Returns:
+            Bounds:
+                メッシュコードに対応する境界
+        """
+        self._check_mesh_code(mesh_code)
+
+        # メッシュコードから座標を逆算する
+        if self.mesh_type == "1st":
+            # 第1次メッシュコード（4桁）
+            lat_code = int(mesh_code[0:2])
+            lon_code = int(mesh_code[2:4]) + 100
+
+            # 境界計算
+            SCALE = 10**10
+            first_lon_size_int = SCALE
+            first_lat_size_int = SCALE * 2 // 3
+
+            x_min_int = lon_code * first_lon_size_int
+            x_max_int = (lon_code + 1) * first_lon_size_int
+            y_min_int = lat_code * first_lat_size_int
+            y_max_int = (lat_code + 1) * first_lat_size_int
+
+            x_min = x_min_int / SCALE
+            x_max = x_max_int / SCALE
+            y_min = y_min_int / SCALE
+            y_max = y_max_int / SCALE
+
+        elif self.mesh_type == "2nd":
+            # 第2次メッシュコード（6桁）
+            first_lat = int(mesh_code[0:2])
+            first_lon = int(mesh_code[2:4]) + 100
+            sec_lat = int(mesh_code[4:5])
+            sec_lon = int(mesh_code[5:6])
+
+            # 境界計算
+            SCALE = 10**10
+            lon_scaled = first_lon * SCALE
+            lat_base_scaled = int((first_lat * 40 / 60) * SCALE)
+
+            sec_lon_size_int = SCALE // 8
+            sec_lat_size_int = SCALE // 12
+
+            x_min_int = lon_scaled + (sec_lon * sec_lon_size_int)
+            x_max_int = lon_scaled + ((sec_lon + 1) * sec_lon_size_int)
+            y_min_int = lat_base_scaled + (sec_lat * sec_lat_size_int)
+            y_max_int = lat_base_scaled + ((sec_lat + 1) * sec_lat_size_int)
+
+            x_min = x_min_int / SCALE
+            x_max = x_max_int / SCALE
+            y_min = y_min_int / SCALE
+            y_max = y_max_int / SCALE
+
+        elif self.mesh_type == "standard":
+            # 基準地域メッシュコード（8桁）
+            first_lat = int(mesh_code[0:2])
+            first_lon = int(mesh_code[2:4]) + 100
+            sec_lat = int(mesh_code[4:5])
+            sec_lon = int(mesh_code[5:6])
+            std_lat = int(mesh_code[6:7])
+            std_lon = int(mesh_code[7:8])
+
+            # 境界計算
+            SCALE = 10**10
+            sec_x_min = first_lon + (sec_lon * 7.5 / 60)
+            sec_y_min = (first_lat * 40 / 60) + (sec_lat * 5 / 60)
+
+            sec_x_min_int = int(sec_x_min * SCALE)
+            sec_y_min_int = int(sec_y_min * SCALE)
+
+            std_lon_size_int = SCALE // 80
+            std_lat_size_int = SCALE // 120
+
+            x_min_int = sec_x_min_int + (std_lon * std_lon_size_int)
+            x_max_int = sec_x_min_int + ((std_lon + 1) * std_lon_size_int)
+            y_min_int = sec_y_min_int + (std_lat * std_lat_size_int)
+            y_max_int = sec_y_min_int + ((std_lat + 1) * std_lat_size_int)
+
+            x_min = x_min_int / SCALE
+            x_max = x_max_int / SCALE
+            y_min = y_min_int / SCALE
+            y_max = y_max_int / SCALE
+
+        elif self.mesh_type == "half":
+            # 2分の1地域メッシュコード（9桁）
+            std_mesh_code = mesh_code[:8]
+            half_code = int(mesh_code[8:9])
+
+            # 基準地域メッシュの境界を計算
+            temp_mesh_to = MeshCodeTo()
+            std_bounds = temp_mesh_to.to_bounds(std_mesh_code)
+
+            # 2分の1メッシュの位置計算
+            if half_code == 1:  # 南西
+                x_offset, y_offset = 0, 0
+            elif half_code == 2:  # 南東
+                x_offset, y_offset = 1, 0
+            elif half_code == 3:  # 北西
+                x_offset, y_offset = 0, 1
+            elif half_code == 4:  # 北東
+                x_offset, y_offset = 1, 1
+            else:
+                raise ValueError(f"Invalid half mesh code: {half_code}")
+
+            # 境界計算
+            SCALE = 10**10
+            std_x_min = Decimal(f"{std_bounds.x_min}")
+            std_y_min = Decimal(f"{std_bounds.y_min}")
+
+            std_x_min_int = int(std_x_min * SCALE)
+            std_y_min_int = int(std_y_min * SCALE)
+
+            half_lon_size_int = SCALE // 160
+            half_lat_size_int = SCALE // 240
+
+            x_min_int = std_x_min_int + (x_offset * half_lon_size_int)
+            x_max_int = std_x_min_int + ((x_offset + 1) * half_lon_size_int)
+            y_min_int = std_y_min_int + (y_offset * half_lat_size_int)
+            y_max_int = std_y_min_int + ((y_offset + 1) * half_lat_size_int)
+
+            x_min = x_min_int / SCALE
+            x_max = x_max_int / SCALE
+            y_min = y_min_int / SCALE
+            y_max = y_max_int / SCALE
+
+        elif self.mesh_type == "quarter":
+            # 4分の1地域メッシュコード（10桁）
+            half_mesh_code = mesh_code[:9]
+            quarter_code = int(mesh_code[9:10])
+
+            # 2分の1地域メッシュの境界を計算
+            temp_mesh_to = MeshCodeTo()
+            half_bounds = temp_mesh_to.to_bounds(half_mesh_code)
+
+            # 4分の1メッシュの位置計算
+            if quarter_code == 1:  # 南西
+                x_offset, y_offset = 0, 0
+            elif quarter_code == 2:  # 南東
+                x_offset, y_offset = 1, 0
+            elif quarter_code == 3:  # 北西
+                x_offset, y_offset = 0, 1
+            elif quarter_code == 4:  # 北東
+                x_offset, y_offset = 1, 1
+            else:
+                raise ValueError(f"Invalid quarter mesh code: {quarter_code}")
+
+            # 境界計算
+            SCALE = 10**10
+            half_x_min = Decimal(f"{half_bounds.x_min}")
+            half_y_min = Decimal(f"{half_bounds.y_min}")
+
+            half_x_min_int = int(half_x_min * SCALE)
+            half_y_min_int = int(half_y_min * SCALE)
+
+            quarter_lon_size_int = SCALE // 320
+            quarter_lat_size_int = SCALE // 480
+
+            x_min_int = half_x_min_int + (x_offset * quarter_lon_size_int)
+            x_max_int = half_x_min_int + ((x_offset + 1) * quarter_lon_size_int)
+            y_min_int = half_y_min_int + (y_offset * quarter_lat_size_int)
+            y_max_int = half_y_min_int + ((y_offset + 1) * quarter_lat_size_int)
+
+            x_min = x_min_int / SCALE
+            x_max = x_max_int / SCALE
+            y_min = y_min_int / SCALE
+            y_max = y_max_int / SCALE
+
+        else:
+            raise ValueError(f"Unsupported mesh type: {self.mesh_type}")
+
+        return Bounds(x_min, y_min, x_max, y_max)
