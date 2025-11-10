@@ -15,4 +15,5 @@ __all__ = [
     "generate_mesh_design",
     "MeshCodeJP",
     "generate_jpmesh",
+    "SquareMesh",
 ]
