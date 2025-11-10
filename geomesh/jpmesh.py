@@ -5,6 +5,7 @@
 import decimal
 import math
 from decimal import ROUND_DOWN, Decimal
+from typing import NamedTuple
 
 import geopandas as gpd
 import shapely
@@ -16,6 +17,18 @@ from .geometries import dms_to_degree_lonlat
 
 decimal.getcontext().prec = 13
 decimal.getcontext().rounding = ROUND_DOWN
+
+global SCALE
+SCALE = 10**10
+
+
+class _Cds(NamedTuple):
+    lon: int
+    lat: int
+    lon_sec: int
+    lat_sec: int
+    lon_std: int
+    lat_std: int
 
 
 class MeshCodeJP(object):
@@ -34,6 +47,7 @@ class MeshCodeJP(object):
         self.standard_mesh_code: str = mesh["standard_mesh_code"]
         self.half_mesh_code: str = mesh["half_mesh_code"]
         self.quarter_mesh_code: str = mesh["quarter_mesh_code"]
+        self._cds = self._coordinates()
 
     def _mesh_code(self, lon: float, lat: float) -> dict[str, str]:
         """
@@ -89,6 +103,22 @@ class MeshCodeJP(object):
             "quarter_mesh_code": quarter_mesh_code,
         }
 
+    def _coordinates(self) -> _Cds:
+        first_lon = int(self.first_mesh_code[2:4]) + 100
+        first_lat = int(self.first_mesh_code[0:2])
+        secandary_lon = int(self.secandary_mesh_code[5:6])
+        secandary_lat = int(self.secandary_mesh_code[4:5])
+        standard_lon = int(self.standard_mesh_code[7:8])
+        standard_lat = int(self.standard_mesh_code[6:7])
+        return _Cds(
+            lon=first_lon,
+            lat=first_lat,
+            lon_sec=secandary_lon,
+            lat_sec=secandary_lat,
+            lon_std=standard_lon,
+            lat_std=standard_lat,
+        )
+
     def first_mesh(self) -> Bounds:
         """
         ## Summary:
@@ -99,14 +129,28 @@ class MeshCodeJP(object):
         """
         lat = int(self.first_mesh_code[0:2])
         lon = int(self.first_mesh_code[2:4]) + 100
-        # 経度（x座標）: 第1次メッシュの経度方向の間隔は1度
-        x_min = Decimal(f"{lon}")
-        x_max = Decimal(f"{lon}") + 1
-        # 緯度（y座標）: 第1次メッシュの緯度方向の間隔は40分（2/3度）
-        y_min = Decimal(f"{lat}") * 40 / 60
-        y_max = (Decimal(f"{lat}") + 1) * 40 / 60
-        # Decimalをfloatに変換してBoundsに渡す
-        return Bounds(float(x_min), float(y_min), float(x_max), float(y_max))
+        # 整数演算による高精度計算（10**10倍で整数化）
+        SCALE = 10**10
+
+        # 第1次メッシュのサイズを高精度整数化
+        # 経度方向: 1度 = SCALE
+        first_lon_size_int = SCALE
+        # 緯度方向: 40/60度 = 2/3度 = SCALE * 2 // 3
+        first_lat_size_int = SCALE * 2 // 3
+
+        # 整数演算で境界を計算
+        x_min_int = lon * first_lon_size_int
+        x_max_int = (lon + 1) * first_lon_size_int
+        y_min_int = lat * first_lat_size_int
+        y_max_int = (lat + 1) * first_lat_size_int
+
+        # 整数から小数に変換
+        x_min_final = x_min_int / SCALE
+        x_max_final = x_max_int / SCALE
+        y_min_final = y_min_int / SCALE
+        y_max_final = y_max_int / SCALE
+
+        return Bounds(x_min_final, y_min_final, x_max_final, y_max_final)
 
     def secandary_mesh(self) -> Bounds:
         """
@@ -116,17 +160,31 @@ class MeshCodeJP(object):
             Bounds:
                 第2次メッシュの境界
         """
-        lat = Decimal(f"{int(self.secandary_mesh_code[0:2])}")
-        lon = Decimal(f"{int(self.secandary_mesh_code[2:4])}") + 100
-        lat_sec = Decimal(f"{int(self.secandary_mesh_code[4:5])}")
-        lon_sec = Decimal(f"{int(self.secandary_mesh_code[5:6])}")
-        # 経度（x座標）: 第2次メッシュの経度方向の間隔は7.5分（1/8度）
-        x_min = lon + (lon_sec * Decimal("7.5") / 60)
-        x_max = lon + ((lon_sec + 1) * Decimal("7.5") / 60)
-        # 緯度（y座標）: 第2次メッシュの緯度方向の間隔は5分（1/12度）
-        y_min = (lat * 40 / 60) + (lat_sec * Decimal("5") / 60)
-        y_max = (lat * 40 / 60) + ((lat_sec + 1) * Decimal("5") / 60)
-        return Bounds(float(x_min), float(y_min), float(x_max), float(y_max))
+        # 整数演算による高精度計算（10**10倍で整数化）
+        lon_scaled = self._cds.lon * SCALE
+        lat_base_scaled = int((self._cds.lat * 40 / 60) * SCALE)
+        lon_int = int(lon_scaled)
+        lat_int = int(lat_base_scaled)
+
+        # 第2次メッシュのサイズを高精度整数化
+        # 経度方向: 0.125度 = SCALE / 8
+        sec_lon_size_int = SCALE // 8
+        # 緯度方向: 5/60度 = 1/12度 = SCALE / 12
+        sec_lat_size_int = SCALE // 12
+
+        # 整数演算で境界を計算
+        x_min_int = lon_int + (self._cds.lon_sec * sec_lon_size_int)
+        x_max_int = lon_int + ((self._cds.lon_sec + 1) * sec_lon_size_int)
+        y_min_int = lat_int + (self._cds.lat_sec * sec_lat_size_int)
+        y_max_int = lat_int + ((self._cds.lat_sec + 1) * sec_lat_size_int)
+
+        # 整数から小数に変換
+        x_min = x_min_int / SCALE
+        x_max = x_max_int / SCALE
+        y_min = y_min_int / SCALE
+        y_max = y_max_int / SCALE
+
+        return Bounds(x_min, y_min, x_max, y_max)
 
     def standard_mesh(self) -> Bounds:
         """
@@ -136,26 +194,37 @@ class MeshCodeJP(object):
             Bounds:
                 基準地域メッシュの境界
         """
-        lat = Decimal(f"{int(self.standard_mesh_code[0:2])}")
-        lon = Decimal(f"{int(self.standard_mesh_code[2:4])}") + 100
-        lat_sec = Decimal(f"{int(self.standard_mesh_code[4:5])}")
-        lon_sec = Decimal(f"{int(self.standard_mesh_code[5:6])}")
-        lat_std = Decimal(f"{int(self.standard_mesh_code[6:7])}")
-        lon_std = Decimal(f"{int(self.standard_mesh_code[7:8])}")
-
+        cds = self._cds
+        # 整数演算による高精度計算（10**10倍で整数化、roundではなくint変換）
         # 第2次メッシュ内の位置を計算
-        sec_x_min = lon + (lon_sec * Decimal("7.5") / 60)
-        sec_y_min = (lat * 40 / 60) + (lat_sec * Decimal("5") / 60)
+        sec_x_min = cds.lon + (cds.lon_sec * 7.5 / 60)
+        sec_y_min = (cds.lat * 40 / 60) + (cds.lat_sec * 5 / 60)
 
-        # 経度（x座標）: 基準地域メッシュの経度方向の間隔は45秒（0.75分）
-        x_min = sec_x_min + (lon_std * Decimal("0.75") / 60)
-        x_max = sec_x_min + ((lon_std + 1) * Decimal("0.75") / 60)
+        sec_x_min_scaled = sec_x_min * SCALE
+        sec_y_min_scaled = sec_y_min * SCALE
+        sec_x_min_int = int(sec_x_min_scaled)
+        sec_y_min_int = int(sec_y_min_scaled)
 
-        # 緯度（y座標）: 基準地域メッシュの緯度方向の間隔は30秒（0.5分）
-        y_min = sec_y_min + (lat_std * Decimal("0.5") / 60)
-        y_max = sec_y_min + ((lat_std + 1) * Decimal("0.5") / 60)
+        # 基準地域メッシュのサイズを高精度整数化
+        # 経度方向: 0.75分 = 0.0125度 = 1250000000000000 (SCALE単位)
+        std_lon_size_int = SCALE // 80  # 0.0125 = 1/80
+        # 緯度方向: 0.5分 = 0.00833333...度 = 8333333333333333.33... (SCALE単位)
+        # 正確には 1/120度なので SCALE // 120
+        std_lat_size_int = SCALE // 120  # 0.5/60 = 1/120
 
-        return Bounds(float(x_min), float(y_min), float(x_max), float(y_max))
+        # 整数演算で境界を計算
+        x_min_int = sec_x_min_int + (cds.lon_std * std_lon_size_int)
+        x_max_int = sec_x_min_int + (cds.lon_std + 1) * std_lon_size_int
+        y_min_int = sec_y_min_int + (cds.lat_std * std_lat_size_int)
+        y_max_int = sec_y_min_int + (cds.lat_std + 1) * std_lat_size_int
+
+        # 整数から小数に変換
+        x_min_final = x_min_int / SCALE
+        x_max_final = x_max_int / SCALE
+        y_min_final = y_min_int / SCALE
+        y_max_final = y_max_int / SCALE
+
+        return Bounds(x_min_final, y_min_final, x_max_final, y_max_final)
 
     def half_mesh(self) -> Bounds:
         """
@@ -185,15 +254,34 @@ class MeshCodeJP(object):
         else:
             raise ValueError(f"Invalid half mesh code: {half_code}")
 
-        # 経度（x座標）: 2分の1メッシュの経度方向の間隔は22.5秒（0.375分）
-        x_min = std_x_min + (x_offset * Decimal("0.375") / 60)
-        x_max = std_x_min + ((x_offset + 1) * Decimal("0.375") / 60)
+        # 整数演算による高精度計算（10**10倍で整数化）
+        SCALE = 10**10
 
-        # 緯度（y座標）: 2分の1メッシュの緯度方向の間隔は15秒（0.25分）
-        y_min = std_y_min + (y_offset * Decimal("0.25") / 60)
-        y_max = std_y_min + ((y_offset + 1) * Decimal("0.25") / 60)
+        # Decimal境界を整数化（roundを使わない）
+        std_x_min_scaled = std_x_min * SCALE
+        std_y_min_scaled = std_y_min * SCALE
+        std_x_min_int = int(std_x_min_scaled)
+        std_y_min_int = int(std_y_min_scaled)
 
-        return Bounds(float(x_min), float(y_min), float(x_max), float(y_max))
+        # 2分の1メッシュのサイズを高精度整数化
+        # 経度方向: 0.00625度 = SCALE / 160
+        half_lon_size_int = SCALE // 160
+        # 緯度方向: 0.25/60度 = 1/240度 = SCALE / 240
+        half_lat_size_int = SCALE // 240
+
+        # 整数演算で境界を計算
+        x_min_int = std_x_min_int + (x_offset * half_lon_size_int)
+        x_max_int = std_x_min_int + ((x_offset + 1) * half_lon_size_int)
+        y_min_int = std_y_min_int + (y_offset * half_lat_size_int)
+        y_max_int = std_y_min_int + ((y_offset + 1) * half_lat_size_int)
+
+        # 整数から小数に変換
+        x_min_final = x_min_int / SCALE
+        x_max_final = x_max_int / SCALE
+        y_min_final = y_min_int / SCALE
+        y_max_final = y_max_int / SCALE
+
+        return Bounds(x_min_final, y_min_final, x_max_final, y_max_final)
 
     def quarter_mesh(self) -> Bounds:
         """
@@ -240,15 +328,34 @@ class MeshCodeJP(object):
         else:
             raise ValueError(f"Invalid quarter mesh code: {quarter_code}")
 
-        # 経度（x座標）: 4分の1メッシュの経度方向の間隔は11.25秒（0.1875分）
-        x_min = half_x_min + (quarter_x_offset * Decimal("0.1875") / 60)
-        x_max = half_x_min + ((quarter_x_offset + 1) * Decimal("0.1875") / 60)
+        # 整数演算による高精度計算（10**10倍で整数化）
+        SCALE = 10**10
 
-        # 緯度（y座標）: 4分の1メッシュの緯度方向の間隔は7.5秒（0.125分）
-        y_min = half_y_min + (quarter_y_offset * Decimal("0.125") / 60)
-        y_max = half_y_min + ((quarter_y_offset + 1) * Decimal("0.125") / 60)
+        # Decimal境界を整数化（roundを使わない）
+        half_x_min_scaled = half_x_min * SCALE
+        half_y_min_scaled = half_y_min * SCALE
+        half_x_min_int = int(half_x_min_scaled)
+        half_y_min_int = int(half_y_min_scaled)
 
-        return Bounds(float(x_min), float(y_min), float(x_max), float(y_max))
+        # 4分の1メッシュのサイズを高精度整数化
+        # 経度方向: 0.003125度 = 1/320度 = SCALE / 320
+        quarter_lon_size_int = SCALE // 320
+        # 緯度方向: 0.125/60度 = 1/480度 = SCALE / 480
+        quarter_lat_size_int = SCALE // 480
+
+        # 整数演算で境界を計算
+        x_min_int = half_x_min_int + (quarter_x_offset * quarter_lon_size_int)
+        x_max_int = half_x_min_int + ((quarter_x_offset + 1) * quarter_lon_size_int)
+        y_min_int = half_y_min_int + (quarter_y_offset * quarter_lat_size_int)
+        y_max_int = half_y_min_int + ((quarter_y_offset + 1) * quarter_lat_size_int)
+
+        # 整数から小数に変換
+        x_min_final = x_min_int / SCALE
+        x_max_final = x_max_int / SCALE
+        y_min_final = y_min_int / SCALE
+        y_max_final = y_max_int / SCALE
+
+        return Bounds(x_min_final, y_min_final, x_max_final, y_max_final)
 
     def __str__(self) -> str:
         data = {
@@ -324,8 +431,7 @@ def generate_jpmesh(
                 )
             # 重複チェック：まだ追加されていないメッシュコードのみ追加
             if mesh_code not in mesh_dict:
-                geom = shapely.box(*mesh_bounds)
-                mesh_dict[mesh_code] = geom
+                mesh_dict[mesh_code] = shapely.box(*mesh_bounds)
             lat += step_lat
         lon += step_lon
 
