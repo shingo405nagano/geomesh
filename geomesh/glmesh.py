@@ -105,6 +105,10 @@ class TileDesign:
         resol = (self.bounds.y_max - self.bounds.y_min) / self.height
         return floor(resol)
 
+    @property
+    def zxy(self) -> dict[str, int]:
+        return {"z": self.zoom_level, "x": self.x_idx, "y": self.y_idx}
+
     def __str__(self) -> str:
         data = {
             "type": str(type(self)),
@@ -323,10 +327,8 @@ class TileDesigner(object):
             "y_idx": [design.y_idx for design in designs],
             "x_resolution": [design.x_resolution for design in designs],
             "y_resolution": [design.y_resolution for design in designs],
+            "zxy": [design.zxy for design in designs],
         }
         polys = [shapely.box(*design.bounds) for design in designs]
         gdf = gpd.GeoDataFrame(data=data, geometry=polys, crs=self.crs)
-        gdf["zxy"] = gdf.apply(
-            lambda row: f"{row.zoom_level}/{row.x_idx}/{row.y_idx}", axis=1
-        )
         return gdf
