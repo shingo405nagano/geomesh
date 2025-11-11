@@ -721,3 +721,18 @@ class MeshCodeTo(object):
             raise ValueError(f"Unsupported mesh type: {self.mesh_type}")
 
         return Bounds(x_min, y_min, x_max, y_max)
+
+
+def mesh_code_to_bounds(mesh_code: str) -> Bounds:
+    """
+    ## Summary:
+        メッシュコードから境界を取得する関数。メッシュコードの種類に応じて適切な境界を返します。
+    Args:
+        mesh_code (str):
+            メッシュコード
+    Returns:
+        Bounds:
+            メッシュコードに対応する境界
+    """
+    mesh_to = MeshCodeTo()
+    return mesh_to.to_bounds(mesh_code)

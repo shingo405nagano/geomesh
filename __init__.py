@@ -14,7 +14,7 @@ __all__ = [
     "tile_designer",
     "generate_mesh_design",
     "MeshCodeJP",
-    "MeshCodeTo",
+    "mesh_code_to_bounds",
     "generate_jpmesh",
     "SquareMesh",
 ]

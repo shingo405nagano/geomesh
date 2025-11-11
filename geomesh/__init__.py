@@ -7,7 +7,7 @@ from .formatter import (
 )
 from .geometries import transform_xy
 from .glmesh import TileDesign, TileDesigner
-from .jpmesh import MeshCodeJP, MeshCodeTo, generate_jpmesh
+from .jpmesh import MeshCodeJP, generate_jpmesh, mesh_code_to_bounds
 from .square import SquareMesh
 
 tile_designer = TileDesigner()
