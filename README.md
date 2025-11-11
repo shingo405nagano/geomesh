@@ -333,3 +333,22 @@ resolution:
 
 [650 rows x 7 columns]
 ```
+
+### 2-7. 範囲内のxyzタイルを取得するURLのリストを作成する。
+```python
+>>> import geomesh
+>>> lon_min, lat_min, lon_max, lat_max = (
+....    140.467194155,
+....    40.596179690,
+....    141.002244644,
+....    40.990309691,
+....)
+>>> zl = 14
+>>> tile_infos = geomesh.global_mesh.tiles(
+....    lon_min, lat_min, lon_max, lat_max, zl, in_crs="EPSG:4326"
+....)
+>>> url = "https://cyberjapandata.gsi.go.jp/xyz/std/{z}/{x}/{y}.png"
+>>> urls = [url.format(**info.zxy) for info in tile_infos]
+>>> print(urls[0])
+https://cyberjapandata.gsi.go.jp/xyz/std/14/14584/6143.png
+```
