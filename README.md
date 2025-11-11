@@ -14,9 +14,9 @@
  - **Globalメッシュ** ... GISで使用される"タイル"の分割線として使用されるメッシュグリッド。ここでいうタイルは``slippy map tilenames``形式のタイルを指します。このメッシュはZoomLevel（ズームレベル）に基づいて分割され、ほぼ世界中をカバーします。
 
 
-## 2. 地域メッシュ（日本国内）
+## 1. 地域メッシュ（日本国内）
 
-### 2-1. 地域メッシュとは
+### 1-1. 地域メッシュとは
 地域メッシュ統計とは、緯度・経度に基づき地域を隙間なく網の目（メッシュ）の区域に分けて、それぞれの区域に関する統計データを編成したものです。
 
 作成された地域メッシュ統計には次のような利点があります。
@@ -88,12 +88,13 @@
 ※ 総務省統計局「地域メッシュ統計の作成」 https://www.stat.go.jp/data/mesh/pdf/gaiyo2.pdf
 
 
-### 2-2. 10進経緯度から地域メッシュコードを取得
+### 1-2. 10進経緯度から地域メッシュコードを取得
+各メッシュコードは文字列として、インスタンス変数に格納されます。
 ```python
 >>> import geomesh
 >>> lon = 140.467194155
 >>> lat = 40.596179690
->>> mesh_jp = geomesh.MeshCodeJP(lon, lat)
+>>> mesh_jp = geomesh.jpmesh.MeshCodeJP(lon, lat)
 >>> print(mesh_jp)
 
 first_mesh_code: '6040'
@@ -103,7 +104,7 @@ half_mesh_code: '604073173'
 quarter_mesh_code: '6040731732'
 ```
 
-## 2-3. メッシュコードから区画の座標を取得
+## 1-3. メッシュコードから区画の座標を取得
 
 メッシュコードは文字列として渡し、桁数に応じた区画の範囲が返されます。
 ```python
@@ -116,7 +117,7 @@ quarter_mesh_code: '6040731732'
 ....    "4分の1地域メッシュ",
 ....  ]
 >>> for code, name in zip(mesh_code, names):
-....    mesh = geomesh.mesh_code_to_bounds(code)
+....    mesh = geomesh.jpmesh.mesh_code_to_bounds(code)
 ....    print(name, "\n", mesh, "\n")
 
 第1次地域区画 
@@ -135,7 +136,14 @@ quarter_mesh_code: '6040731732'
  Bounds(x_min=140.465625, y_min=40.5958333332, x_max=140.46875, y_max=40.5979166665) 
 ```
 
-### 2-4. 範囲内の地域メッシュコードをGeoDataFrameで取得
+### 1-4. 範囲内の地域メッシュコードをGeoDataFrameで取得
+指定した経緯度範囲内の地域メッシュコードをGeoDataFrame形式で取得します。メッシュの種類は`mesh_name`引数で指定します。指定できるメッシュ名は以下の通りです。
+
+ - "1st" : 第1次地域区画
+ - "2nd" : 第2次地域区画
+ - "standard" : 基準地域メッシュ
+ - "half" : 2分の1地域メッシュ
+ - "quarter" : 4分の1地域メッシュ
 ```python
 >>> import geomesh
 >>> lon_min, lat_min, lon_max, lat_max = (
@@ -144,7 +152,7 @@ quarter_mesh_code: '6040731732'
 ....    141.002244644,
 ....    40.990309691,
 ....)
->>> mesh_gdf = geomesh.generate_jpmesh(
+>>> mesh_gdf = geomesh.jpmesh.generate_jpmesh(
 ....    lon_min, lat_min, lon_max, lat_max, mesh_name="standard"
 ....)
 >>> print(mesh_gdf)
@@ -163,136 +171,165 @@ quarter_mesh_code: '6040731732'
 ```
 
 
+## 2. Globalメッシュ
+### 2-1. Globalメッシュとは
+Globalメッシュは、適当につけた名前ですが、GISで使用されるタイルの分割線として使用されるメッシュグリッドを指します。ここでいうタイルは``slippy map tilenames``形式のタイルを指します。このメッシュはZoomLevel（ズームレベル）に基づいて分割され、ほぼ世界中をカバーします。タイルの座標は、x（経度方向）およびy（緯度方向）、z（ズームレベル）で表されます。
+
+※ OpenStreetMap Wiki 「Slippy map tilenames」 https://wiki.openstreetmap.org/wiki/Slippy_map_tilenames
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-### タイル座標の確認
+### 2-2. 10進経緯度からタイル座標を取得
+経緯度からタイル座標（x, y）を取得します。
 ```python
-import geomesh
-
->>> lon = 139.767125
->>> lat = 35.681236
->>> zl = 15
->>> geomesh.tile_designer.lonlat_to_tile_idx(lon, lat, zl, "EPSG:4326")
-{'x': 29105, 'y': 12903}
-
+>>> import geomesh
+>>> lon = 140.467194155
+>>> lat = 40.596179690
+>>> zl = 10
+>>> cds = geomesh.global_mesh.lonlat_to_tile_idx(
+....    lon, lat, zl, in_crs="EPSG:4326"
+.... )
+>>> print(cds)
+{'x': 911, 'y': 385}
 ```
 
-### 経緯度からタイルの情報を取得
+### 2-3. 経緯度からタイルを構成する情報を取得
+経緯度からタイルの範囲や解像度などの情報を取得します。
 ```python
-import geomesh
->>> lon = 139.767125
->>> lat = 35.681236
->>> zl = 15
->>> tile = geomesh.tile_designer.design_from_lonlat(lon, lat, zl, "EPSG:4326")
->>> print(tile)
+>>> import geomesh
+>>> lon = 140.467194155
+>>> lat = 40.596179690
+>>> zl = 10
+>>> res = geomesh.global_mesh.from_lonlat(lon, lat, zl)
+>>> print(res)
 type: <class 'geomesh.glmesh.TileDesign'>
 crs:
   name: WGS 84 / Pseudo-Mercator
   epsg: 3857
   unit: metre
 XYZ:
-  x_idx: 29105
-  y_idx: 12903
-  zoom_level: 15
+  x_idx: 911
+  y_idx: 385
+  zoom_level: 10
 bounds:
-  x_min: 15557686.989
-  y_min: 4257236.7273
-  x_max: 15558909.9815
-  y_max: 4256013.7349
+  x_min: 15615167.0
+  y_min: 4970241.0
+  x_max: 15654303.0
+  y_max: 4931105.0
 resolution:
-  x_resolution [m/px]: 4.7773
-  y_resolution [m/px]: -4.7774
+  x_resolution [m/px]: 152.0
+  y_resolution [m/px]: -152.0
 ```
 
-### タイルインデックスからタイルの情報を取得
+### 2-4. タイル座標からタイルを構成する情報を取得
+タイル座標（x, y, z）からタイルの範囲や解像度などの情報を取得します。
 ```python
-import geomesh
->>> x_idx = 29105
->>> y_idx = 12903
->>> zl = 15
->>> tile = geomesh.tile_designer.design_from_tile_idx(x_idx, y_idx, zl, "EPSG:4326")
->>> print(tile)
+>>> import geomesh
+>>> x_idx = 911
+>>> y_idx = 385
+>>> zl = 10
+>>> res = geomesh.global_mesh.from_tile_idx(x_idx, y_idx, zl)
+>>> print(res)
 type: <class 'geomesh.glmesh.TileDesign'>
 crs:
   name: WGS 84 / Pseudo-Mercator
   epsg: 3857
   unit: metre
 XYZ:
-  x_idx: 29105
-  y_idx: 12903
-  zoom_level: 15
+  x_idx: 911
+  y_idx: 385
+  zoom_level: 10
 bounds:
-  x_min: 15557686.989
-  y_min: 4257236.7273
-  x_max: 15558909.9815
-  y_max: 4256013.7349
+  x_min: 15615167.0
+  y_min: 4970241.0
+  x_max: 15654303.0
+  y_max: 4931105.0
 resolution:
-  x_resolution [m/px]: 4.7773
-  y_resolution [m/px]: -4.7774
+  x_resolution [m/px]: 152.0
+  y_resolution [m/px]: -152.0
 ```
 
-### 指定した範囲のタイル情報を取得
+### 2-5. 範囲内のタイル分割メッシュ情報を取得
+戻り値はリストに格納されたTileDesignオブジェクトです。
 ```python
-import geomesh
->>> x_min = 140.6118737
->>> x_max = 140.6136660
->>> y_min = 40.8367183
->>> y_max = 40.8381160
->>> zl = 18
->>> tiles = geomesh.tile_designer.design_tiles(x_min, y_min, x_max, y_max, zl, "EPSG:4326", geodataframe=True)
->>> print(tiles)
-   zoom_level   x_idx  y_idx  x_resolution  y_resolution                                           geometry
-0          18  233462  98440        0.5971       -0.5972  POLYGON ((15652927.526 4988586.214, 15652927.5...
-1          18  233462  98441        0.5971       -0.5972  POLYGON ((15652927.526 4988433.34, 15652927.52...
-2          18  233463  98440        0.5971       -0.5972  POLYGON ((15653080.4 4988586.214, 15653080.4 4...
-3          18  233463  98441        0.5971       -0.5972  POLYGON ((15653080.4 4988433.34, 15653080.4 49...
+>>> lon_min, lat_min, lon_max, lat_max = (
+....    140.467194155,
+....    40.596179690,
+....    141.002244644,
+....    40.990309691,
+....)
+>>> zl = 14
+>>> res = geomesh.global_mesh.tiles(
+....    lon_min, lat_min, lon_max, lat_max, zl, in_crs="EPSG:4326"
+....)
+>>> print(type(res))
+>>> print(res[0])
+>>> print(res[-1])
+<class 'list'>
+
+type: <class 'geomesh.glmesh.TileDesign'>
+crs:
+  name: WGS 84 / Pseudo-Mercator
+  epsg: 3857
+  unit: metre
+XYZ:
+  x_idx: 14584
+  y_idx: 6143
+  zoom_level: 14
+bounds:
+  x_min: 15634735.0
+  y_min: 5011823.0
+  x_max: 15637181.0
+  y_max: 5009377.0
+resolution:
+  x_resolution [m/px]: 9.0
+  y_resolution [m/px]: -9.0
+
+type: <class 'geomesh.glmesh.TileDesign'>
+crs:
+  name: WGS 84 / Pseudo-Mercator
+  epsg: 3857
+  unit: metre
+XYZ:
+  x_idx: 14609
+  y_idx: 6167
+  zoom_level: 14
+bounds:
+  x_min: 15695885.0
+  y_min: 4953119.0
+  x_max: 15698331.0
+  y_max: 4950673.0
+resolution:
+  x_resolution [m/px]: 9.0
+  y_resolution [m/px]: -9.0
+```
+
+
+### 2-6. 範囲内のタイル分割メッシュ情報をGeoDataFrameで取得
+```python
+>>> import geomesh
+>>> lon_min, lat_min, lon_max, lat_max = (
+....    140.467194155,
+....    40.596179690,
+....    141.002244644,
+....    40.990309691,
+....)
+>>> zl = 14
+>>> gdf = geomesh.global_mesh.tiles(
+....    lon_min, lat_min, lon_max, lat_max, zl, in_crs="EPSG:4326", geodataframe=True
+....)
+>>> print(gdf)
+     zoom_level  x_idx  y_idx  x_resolution  y_resolution                                           geometry            zxy
+0            14  14584   6143           9.0          -9.0  POLYGON ((15637181 5011823, 15637181 5009377, ...  14/14584/6143
+1            14  14584   6144           9.0          -9.0  POLYGON ((15637181 5009377, 15637181 5006931, ...  14/14584/6144
+2            14  14584   6145           9.0          -9.0  POLYGON ((15637181 5006931, 15637181 5004485, ...  14/14584/6145
+3            14  14584   6146           9.0          -9.0  POLYGON ((15637181 5004485, 15637181 5002039, ...  14/14584/6146
+4            14  14584   6147           9.0          -9.0  POLYGON ((15637181 5002039, 15637181 4999593, ...  14/14584/6147
+..          ...    ...    ...           ...           ...                                                ...            ...
+645          14  14609   6163           9.0          -9.0  POLYGON ((15698331 4962903, 15698331 4960457, ...  14/14609/6163
+646          14  14609   6164           9.0          -9.0  POLYGON ((15698331 4960457, 15698331 4958011, ...  14/14609/6164
+647          14  14609   6165           9.0          -9.0  POLYGON ((15698331 4958011, 15698331 4955565, ...  14/14609/6165
+648          14  14609   6166           9.0          -9.0  POLYGON ((15698331 4955565, 15698331 4953119, ...  14/14609/6166
+649          14  14609   6167           9.0          -9.0  POLYGON ((15698331 4953119, 15698331 4950673, ...  14/14609/6167
+
+[650 rows x 7 columns]
 ```
