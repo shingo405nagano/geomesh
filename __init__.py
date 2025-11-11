@@ -1,4 +1,4 @@
-import geomesh
+from .geomesh import *
 
 __version__ = "0.1.0"
 
