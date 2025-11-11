@@ -8,6 +8,5 @@ from .formatter import (
 from .geometries import transform_xy
 from .glmesh import TileDesign, TileDesigner
 from .jpmesh import MeshCodeJP, generate_jpmesh, mesh_code_to_bounds
-from .square import SquareMesh
 
 global_mesh = TileDesigner()
