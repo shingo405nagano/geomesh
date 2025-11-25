@@ -3,7 +3,7 @@ from typing import Optional
 import geopandas as gpd
 import shapely
 
-from geomesh.data import Bounds
+from .data import Bounds
 
 global DIGITS
 DIGITS = 10**10
