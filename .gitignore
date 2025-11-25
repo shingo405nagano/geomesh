@@ -1,6 +1,5 @@
 test.py
 *.pyc
 *.geojson
-*square.py
 *hexagon.py
 *.gitignore
