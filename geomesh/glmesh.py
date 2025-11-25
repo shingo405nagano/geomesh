@@ -301,8 +301,8 @@ class TileDesigner(object):
                 タイルデザインのリスト
         """
         # 左下と右上のタイルインデックスを取得
-        sw_tile_idx = self.lonlat_to_tile_idx(x_min, y_min, zoom_level, in_crs)
-        ne_tile_idx = self.lonlat_to_tile_idx(x_max, y_max, zoom_level, in_crs)
+        sw_tile_idx = self.lonlat_to_tile_idx(x_min, y_min, zoom_level, in_crs)  # type: ignore
+        ne_tile_idx = self.lonlat_to_tile_idx(x_max, y_max, zoom_level, in_crs)  # type: ignore
         # タイルインデックスの範囲内でタイルデザインを生成
         designs = []
         for x_idx in range(sw_tile_idx["x"], ne_tile_idx["x"] + 1):
