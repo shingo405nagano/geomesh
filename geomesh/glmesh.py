@@ -275,7 +275,7 @@ class TileDesigner(object):
         x_max: float,
         y_max: float,
         zoom_level: int,
-        in_crs: pyproj.CRS | int | str = pyproj.CRS.from_epsg(4326),
+        in_crs: pyproj.CRS | int | str = 4326,
         geodataframe: bool = False,
     ) -> list[TileDesign] | gpd.GeoDataFrame:
         """

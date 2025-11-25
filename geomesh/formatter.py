@@ -21,7 +21,7 @@ def _intermediate(arg_index, kward, *args, **kwargs) -> dict[str, Any]:
         dict:
             辞書型で、引数が args にあるかどうかとその値を含む。
             "in_args" (bool): 引数が args にある場合は True、kwargs にある場合は False。
-            "value" (Any): 引数の値。
+            "value" (Any): 引数の値。引数が存在しない場合（デフォルト値を使用）は None。
     """
     in_args = True
     value = None
@@ -29,7 +29,8 @@ def _intermediate(arg_index, kward, *args, **kwargs) -> dict[str, Any]:
         value = args[arg_index]
     else:
         in_args = False
-        value = kwargs[kward]
+        # デフォルト引数を使用している場合はkwargsに存在しない可能性がある
+        value = kwargs.get(kward, None)
     return {"in_args": in_args, "value": value}
 
 
@@ -189,6 +190,9 @@ def type_checker_crs(arg_index: int, kward: str):
             data["arg_index"] = arg_index
             data["kward"] = kward
             value = data["value"]
+            # デフォルト引数を使用している場合（valueがNone）はそのまま関数を呼び出す
+            if value is None:
+                return func(*args, **kwargs)
             if isinstance(value, pyproj.CRS):
                 return func(*args, **kwargs)
             try:
