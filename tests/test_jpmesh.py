@@ -4,236 +4,219 @@ Tests for Japanese mesh code functions (jpmesh module).
 
 import geopandas as gpd
 import pytest
+import shapely
 
-from geomesh.data import Bounds
-from geomesh.jpmesh import MeshCodeJP, generate_jpmesh, mesh_code_to_bounds
+import geomesh
 
+from .data import TestDataSets
 
-class TestMeshCodeJP:
-    """Tests for MeshCodeJP class."""
-
-    def test_initialization_tokyo(self, tokyo_coords):
-        """東京の座標でメッシュコードを生成"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        assert mesh.first_mesh_code is not None
-        assert mesh.secandary_mesh_code is not None
-        assert mesh.standard_mesh_code is not None
-        assert mesh.half_mesh_code is not None
-        assert mesh.quarter_mesh_code is not None
-
-    def test_mesh_code_lengths(self, tokyo_coords):
-        """各メッシュコードの長さが正しいか"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        assert len(mesh.first_mesh_code) == 4
-        assert len(mesh.secandary_mesh_code) == 6
-        assert len(mesh.standard_mesh_code) == 8
-        assert len(mesh.half_mesh_code) == 9
-        assert len(mesh.quarter_mesh_code) == 10
-
-    def test_mesh_code_hierarchy(self, tokyo_coords):
-        """メッシュコードの階層性（上位コードが下位コードに含まれる）"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        assert mesh.secandary_mesh_code.startswith(mesh.first_mesh_code)
-        assert mesh.standard_mesh_code.startswith(mesh.secandary_mesh_code)
-        assert mesh.half_mesh_code.startswith(mesh.standard_mesh_code)
-        assert mesh.quarter_mesh_code.startswith(mesh.half_mesh_code)
-
-    def test_first_mesh_bounds(self, tokyo_coords):
-        """第1次メッシュの境界が正しく計算される"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh.first_mesh()
-
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
-        # 第1次メッシュのサイズチェック（約80km）
-        assert abs(bounds.x_max - bounds.x_min - 1.0) < 0.01  # 経度1度
-        assert abs(bounds.y_max - bounds.y_min - (2 / 3)) < 0.01  # 緯度40分
-
-    def test_secandary_mesh_bounds(self, tokyo_coords):
-        """第2次メッシュの境界が正しく計算される"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh.secandary_mesh()
-
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
-        # 第2次メッシュのサイズチェック
-        assert abs(bounds.x_max - bounds.x_min - 0.125) < 0.001  # 7.5分
-
-    def test_standard_mesh_bounds(self, tokyo_coords):
-        """基準地域メッシュの境界が正しく計算される"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh.standard_mesh()
-
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
-        # 基準地域メッシュのサイズチェック
-        assert abs(bounds.x_max - bounds.x_min - 0.0125) < 0.0001  # 45秒
-
-    def test_half_mesh_bounds(self, tokyo_coords):
-        """2分の1地域メッシュの境界が正しく計算される"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh.half_mesh()
-
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
-
-    def test_quarter_mesh_bounds(self, tokyo_coords):
-        """4分の1地域メッシュの境界が正しく計算される"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh.quarter_mesh()
-
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
-
-    def test_mesh_nesting(self, tokyo_coords):
-        """メッシュが入れ子構造になっているか"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-
-        first = mesh.first_mesh()
-        second = mesh.secandary_mesh()
-        standard = mesh.standard_mesh()
-        half = mesh.half_mesh()
-        quarter = mesh.quarter_mesh()
-
-        # 下位メッシュは上位メッシュに含まれる
-        assert first.x_min <= second.x_min
-        assert first.x_max >= second.x_max
-        assert first.y_min <= second.y_min
-        assert first.y_max >= second.y_max
-
-        assert second.x_min <= standard.x_min
-        assert second.x_max >= standard.x_max
-        assert second.y_min <= standard.y_min
-        assert second.y_max >= standard.y_max
-
-        assert standard.x_min <= half.x_min
-        assert standard.x_max >= half.x_max
-        assert standard.y_min <= half.y_min
-        assert standard.y_max >= half.y_max
-
-        assert half.x_min <= quarter.x_min
-        assert half.x_max >= quarter.x_max
-        assert half.y_min <= quarter.y_min
-        assert half.y_max >= quarter.y_max
+data = TestDataSets()
+prefectures = data.pref_points_df["prefecture"].tolist()
 
 
-class TestGenerateJPMesh:
-    """Tests for generate_jpmesh function."""
-
-    def test_generate_standard_mesh(self, small_bounds):
-        """基準地域メッシュの生成"""
-        gdf = generate_jpmesh(
-            small_bounds.x_min,
-            small_bounds.y_min,
-            small_bounds.x_max,
-            small_bounds.y_max,
-            mesh_name="standard",
-        )
-
-        assert isinstance(gdf, gpd.GeoDataFrame)
-        assert len(gdf) > 0
-        assert "mesh_code" in gdf.columns
-        assert "geometry" in gdf.columns
-        # すべてのメッシュコードが8桁
-        assert all(len(code) == 8 for code in gdf["mesh_code"])
-
-    def test_generate_first_mesh(self, test_bounds):
-        """第1次メッシュの生成"""
-        gdf = generate_jpmesh(
-            test_bounds.x_min,
-            test_bounds.y_min,
-            test_bounds.x_max,
-            test_bounds.y_max,
-            mesh_name="1st",
-        )
-
-        assert isinstance(gdf, gpd.GeoDataFrame)
-        assert len(gdf) > 0
-        assert all(len(code) == 4 for code in gdf["mesh_code"])
-
-    def test_generate_second_mesh(self, small_bounds):
-        """第2次メッシュの生成"""
-        gdf = generate_jpmesh(
-            small_bounds.x_min,
-            small_bounds.y_min,
-            small_bounds.x_max,
-            small_bounds.y_max,
-            mesh_name="2nd",
-        )
-
-        assert isinstance(gdf, gpd.GeoDataFrame)
-        assert len(gdf) > 0
-        assert all(len(code) == 6 for code in gdf["mesh_code"])
-
-    def test_no_duplicate_mesh_codes(self, small_bounds):
-        """重複したメッシュコードが生成されない"""
-        gdf = generate_jpmesh(
-            small_bounds.x_min,
-            small_bounds.y_min,
-            small_bounds.x_max,
-            small_bounds.y_max,
-            mesh_name="standard",
-        )
-
-        assert len(gdf["mesh_code"]) == len(gdf["mesh_code"].unique())
-
-    def test_invalid_mesh_name(self, small_bounds):
-        """無効なメッシュ名でエラーが発生"""
-        with pytest.raises(ValueError):
-            generate_jpmesh(
-                small_bounds.x_min,
-                small_bounds.y_min,
-                small_bounds.x_max,
-                small_bounds.y_max,
-                mesh_name="invalid",
-            )
-
-    def test_invalid_range(self):
-        """無効な範囲でエラーが発生"""
-        with pytest.raises(ValueError):
-            generate_jpmesh(
-                140.0,  # x_min > x_max
-                35.0,
-                139.0,
-                36.0,
-                mesh_name="standard",
-            )
-
-    def test_crs_is_correct(self, small_bounds):
-        """生成されたGeoDataFrameのCRSが正しい"""
-        gdf = generate_jpmesh(
-            small_bounds.x_min,
-            small_bounds.y_min,
-            small_bounds.x_max,
-            small_bounds.y_max,
-            mesh_name="standard",
-        )
-
-        assert gdf.crs == "EPSG:4326"
+"""
+********************************************************************************
+Summary:
+    経緯度から日本の地域メッシュコードとその境界を取得する機能をテスト
+Details:
+    - 各都道府県庁所在地のポイントデータを使用
+    - 生成されるメッシュコードが文字列であり、正しい長さを持つことを確認
+    - 各メッシュコードが正しく生成され、ポイントがメッシュ内に含まれることを確認
+    - 第1次メッシュコード（4桁）
+    - 第2次メッシュコード（6桁）
+    - 基準地域メッシュコード（8桁）
+    - 2分の1地域メッシュコード（9桁）
+    - 4分の1地域メッシュコード（10桁）
+    - 度分秒（DMS）形式の経緯度だとしても正しくメッシュコードが生成されることを確認
+********************************************************************************
+"""
 
 
-class TestMeshCodeToBounds:
-    """Tests for mesh_code_to_bounds function."""
+@pytest.mark.parametrize(
+    ("pnt", "code"),
+    [
+        (data.get_pref_point(pref), data.get_pref_mesh_code(pref, "1st"))
+        for pref in prefectures
+    ],
+)
+def test_1st_mesh_code_generation(pnt, code):
+    """第1次メッシュコードの生成テスト"""
+    mesh = geomesh.jpmesh.MeshCodeJP(pnt.x, pnt.y)
+    # MeshCodeが正しいことを確認
+    assert isinstance(mesh.first_mesh_code, str)
+    assert len(mesh.first_mesh_code) == 4
+    assert mesh.first_mesh_code == code
+    bounds = shapely.box(*mesh.first_mesh())
+    # ポイントがメッシュ内に含まれることを確認
+    assert bounds.contains(pnt)
 
-    def test_first_mesh_code_to_bounds(self, known_mesh_codes):
-        """第1次メッシュコードから境界を取得"""
-        tokyo_data = known_mesh_codes["tokyo_standard"]
-        first_code = tokyo_data["codes"]["first"]
 
-        bounds = mesh_code_to_bounds(first_code)
-        assert isinstance(bounds, Bounds)
-        assert bounds.x_min < bounds.x_max
-        assert bounds.y_min < bounds.y_max
+@pytest.mark.parametrize(
+    ("pnt", "code"),
+    [
+        (data.get_pref_point(pref), data.get_pref_mesh_code(pref, "2nd"))
+        for pref in prefectures
+    ],
+)
+def test_2nd_mesh_code_generation(pnt, code):
+    """第2次メッシュコードの生成テスト"""
+    mesh = geomesh.jpmesh.MeshCodeJP(pnt.x, pnt.y)
+    assert isinstance(mesh.secandary_mesh_code, str)
+    assert len(mesh.secandary_mesh_code) == 6
+    assert mesh.secandary_mesh_code == code
+    bounds = shapely.box(*mesh.secandary_mesh())
+    assert bounds.contains(pnt)
 
-    def test_invalid_mesh_code(self):
-        """無効なメッシュコードでエラーが発生"""
-        with pytest.raises(ValueError):
-            mesh_code_to_bounds("123")  # 長さが不正
 
-    def test_roundtrip_conversion(self, tokyo_coords):
-        """メッシュコード生成→境界取得→元の座標が含まれる"""
-        mesh = MeshCodeJP(tokyo_coords.x, tokyo_coords.y)
-        bounds = mesh_code_to_bounds(mesh.standard_mesh_code)
+@pytest.mark.parametrize(
+    ("pnt", "code"),
+    [
+        (data.get_pref_point(pref), data.get_pref_mesh_code(pref, "standard"))
+        for pref in prefectures
+    ],
+)
+def test_standard_mesh_code_generation(pnt, code):
+    """基準地域メッシュコードの生成テスト"""
+    mesh = geomesh.jpmesh.MeshCodeJP(pnt.x, pnt.y)
+    assert isinstance(mesh.standard_mesh_code, str)
+    assert len(mesh.standard_mesh_code) == 8
+    assert mesh.standard_mesh_code == code
+    bounds = shapely.box(*mesh.standard_mesh())
+    assert bounds.contains(pnt)
 
-        assert bounds.x_min < tokyo_coords.x <= bounds.x_max
-        assert bounds.y_min < tokyo_coords.y <= bounds.y_max
+
+@pytest.mark.parametrize(
+    ("pnt", "code"),
+    [
+        (data.get_pref_point(pref), data.get_pref_mesh_code(pref, "half"))
+        for pref in prefectures
+    ],
+)
+def test_half_mesh_code_generation(pnt, code):
+    """2分の1地域メッシュコードの生成テスト"""
+    mesh = geomesh.jpmesh.MeshCodeJP(pnt.x, pnt.y)
+    assert isinstance(mesh.half_mesh_code, str)
+    assert len(mesh.half_mesh_code) == 9
+    assert mesh.half_mesh_code == code
+    bounds = shapely.box(*mesh.half_mesh())
+    assert bounds.contains(pnt)
+
+
+@pytest.mark.parametrize(
+    ("pnt", "code"),
+    [
+        (data.get_pref_point(pref), data.get_pref_mesh_code(pref, "quarter"))
+        for pref in prefectures
+    ],
+)
+def test_quarter_mesh_code_generation(pnt, code):
+    """4分の1地域メッシュコードの生成テスト"""
+    mesh = geomesh.jpmesh.MeshCodeJP(pnt.x, pnt.y)
+    assert isinstance(mesh.quarter_mesh_code, str)
+    assert len(mesh.quarter_mesh_code) == 10
+    assert mesh.quarter_mesh_code == code
+    bounds = shapely.box(*mesh.quarter_mesh())
+    assert bounds.contains(pnt)
+
+
+def test_dms_input_quarter_mesh_code():
+    """度分秒（DMS）形式の経緯度から4分の1地域メッシュコードを取得するテスト"""
+    lon_dms, lat_dms = 1400516.27815, 360613.58925
+    lon, lat = 140.08785504166664, 36.103774791666666
+    dms_mesh = geomesh.jpmesh.MeshCodeJP(lon_dms, lat_dms, is_dms=True)
+    standard_mesh = geomesh.jpmesh.MeshCodeJP(lon, lat)
+    assert dms_mesh.quarter_mesh_code == standard_mesh.quarter_mesh_code
+
+
+"""
+********************************************************************************
+Summary:
+    地域メッシュコードから経緯度への変換テスト
+Details:
+    - 桁数の異なる各種メッシュコードを使用
+    - メッシュコードが「1st」「2nd」「standard」「half」「quarter」の順に小さくなる事を確認
+    - 生成されたBoundsの重心点から再度メッシュコードを生成し、元のメッシュコードと一致することを確認
+    - 第1次メッシュコード（4桁）
+    - 第2次メッシュコード（6桁）
+    - 基準地域メッシュコード（8桁）
+    - 2分の1地域メッシュコード（9桁）
+    - 4分の1地域メッシュコード（10桁）
+********************************************************************************
+"""
+
+
+@pytest.mark.parametrize(("pref"), prefectures)
+def test_mesh_code_to_bounds_conversion(pref):
+    code_1st = data.get_pref_mesh_code(pref, "1st")
+    mesh1st = shapely.box(*geomesh.jpmesh.mesh_code_to_bounds(code_1st))
+    code_2nd = data.get_pref_mesh_code(pref, "2nd")
+    mesh2nd = shapely.box(*geomesh.jpmesh.mesh_code_to_bounds(code_2nd))
+    code_standard = data.get_pref_mesh_code(pref, "standard")
+    mesh_standard = shapely.box(*geomesh.jpmesh.mesh_code_to_bounds(code_standard))
+    code_half = data.get_pref_mesh_code(pref, "half")
+    mesh_half = shapely.box(*geomesh.jpmesh.mesh_code_to_bounds(code_half))
+    code_quarter = data.get_pref_mesh_code(pref, "quarter")
+    mesh_quarter = shapely.box(*geomesh.jpmesh.mesh_code_to_bounds(code_quarter))
+    # 生成されたBoundsの重心点から再度メッシュコードを生成し、元のメッシュコードと一致することを確認
+    mesh1st_pnt = mesh1st.centroid
+    re_mesh1st = geomesh.jpmesh.MeshCodeJP(mesh1st_pnt.x, mesh1st_pnt.y)
+    assert re_mesh1st.first_mesh_code == code_1st
+    mesh2nd_pnt = mesh2nd.centroid
+    re_mesh2nd = geomesh.jpmesh.MeshCodeJP(mesh2nd_pnt.x, mesh2nd_pnt.y)
+    assert re_mesh2nd.secandary_mesh_code == code_2nd
+    mesh_standard_pnt = mesh_standard.centroid
+    re_mesh_standard = geomesh.jpmesh.MeshCodeJP(
+        mesh_standard_pnt.x, mesh_standard_pnt.y
+    )
+    assert re_mesh_standard.standard_mesh_code == code_standard
+    mesh_half_pnt = mesh_half.centroid
+    re_mesh_half = geomesh.jpmesh.MeshCodeJP(mesh_half_pnt.x, mesh_half_pnt.y)
+    assert re_mesh_half.half_mesh_code == code_half
+    mesh_quarter_pnt = mesh_quarter.centroid
+    re_mesh_quarter = geomesh.jpmesh.MeshCodeJP(mesh_quarter_pnt.x, mesh_quarter_pnt.y)
+    assert re_mesh_quarter.quarter_mesh_code == code_quarter
+
+
+"""
+********************************************************************************
+Summary:
+    指定した範囲をカバーする日本の地域メッシュコードを取得する機能をテスト
+Details:
+    - 指定した範囲をカバーしている事を確認
+    - 戻り値がGeoDataFrameである事を確認
+    - GeoDataFrameには、メッシュコードとジオメトリが含まれている事を確認
+    - メッシュコードがユニークである事を確認
+    - touchesメソッドにより、各メッシュが他のメッシュと接している事を確認（3, 5, 8方向のいずれか）
+********************************************************************************
+"""
+
+
+@pytest.mark.parametrize(
+    ("mesh_name"),
+    [
+        "1st",
+        "2nd",
+    ],
+)
+def test_generate_jpmesh(mesh_name):
+    x_min = 140.650815029
+    y_min = 41.134576484
+    x_max = 141.312398899
+    y_max = 41.503717109
+    gdf = geomesh.jpmesh.generate_jpmesh(
+        x_min, y_min, x_max, y_max, mesh_name=mesh_name
+    )
+    # 戻り値がGeoDataFrameである事を確認
+    assert isinstance(gdf, gpd.GeoDataFrame)
+    # GeoDataFrameには、メッシュコードとジオメトリが含まれている事を確認
+    assert "mesh_code" in gdf.columns
+    assert "geometry" in gdf.columns
+    # メッシュコードがユニークである事を確認
+    assert len(gdf) == len(gdf["mesh_code"].unique())
+    # 指定した範囲をカバーしている事を確認
+    trg_scope = shapely.box(x_min, y_min, x_max, y_max)
+    cover_scope = shapely.box(*shapely.union_all(gdf.geometry).bounds)
+    assert cover_scope.contains(trg_scope)
+    for mesh_box in gdf.geometry:
+        rows = gdf[gdf.geometry.touches(mesh_box)].shape[0]
+        assert rows in [3, 5, 8]  # 3, 5, 8方向のいずれか
