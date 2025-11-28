@@ -2,7 +2,7 @@ from typing import Iterable
 
 import pyproj
 
-from .data import XY
+from .data import XY, Bounds
 from .formatter import type_checker_crs, type_checker_float
 
 global DIGITS
@@ -116,3 +116,20 @@ def str_dms_to_degree(
     minutes = int(minutes * (SCALE * 10) / 60)
     seconds = int(seconds * (SCALE * 10) / 3600)
     return degrees + round((minutes + seconds) / (SCALE * 10), DIGITS)
+
+
+class JapanPlaneRectangular(object):
+    def _crs_obj(self, epsg: int) -> pyproj.CRS:
+        return pyproj.CRS.from_epsg(epsg)
+
+    def get_bounds(self, epsg: int) -> Bounds:
+        crs = self._crs_obj(epsg)
+        aou = crs.area_of_use
+        return Bounds(aou.west, aou.south, aou.east, aou.north)  # type: ignore
+
+    def get_origin_pnt(self, epsg: int) -> XY:
+        crs = self._crs_obj(epsg)
+        data = crs.to_dict()
+        lon = data.get("lon_0")
+        lat = data.get("lat_0")
+        return XY(x=lon, y=lat)  # type: ignore
