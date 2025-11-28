@@ -1,10 +1,14 @@
-from decimal import Decimal
 from typing import Iterable
 
 import pyproj
 
 from .data import XY
 from .formatter import type_checker_crs, type_checker_float
+
+global DIGITS
+DIGITS = 10
+global SCALE
+SCALE = 10**DIGITS
 
 
 @type_checker_float(arg_index=0, kward="x")
@@ -40,23 +44,15 @@ def transform_xy(
     return XY(x=lon, y=lat)
 
 
-def dms_to_degree(
-    dms: float,  #
-    digits: int = 9,
-    decimal_obj: bool = False,
-) -> float | Decimal:
+def dms_to_degree(dms: float) -> float:
     """
     ## Summary:
         度分秒経緯度を10進法経緯度に変換する関数
     Args:
         dms (float):
             度分秒経緯度
-        digits (int):
-            小数点以下の桁数
-        decimal_obj (bool):
-            10進法経緯度をDecimal型で返すかどうか
     Returns:
-        float | Decimal:
+        float:
             10進法経緯度
     """
     try:
@@ -69,20 +65,13 @@ def dms_to_degree(
     micro_sec = float(f"0.{decimal_part}")
     if len(integer_part) < 6 or 7 < len(integer_part):
         raise ValueError(f"dms must have a 6- or 7-digit integer part. Arg: {dms}")
-    sec = Decimal(f"{(int(integer_part[-2:]) + micro_sec) / 3600}")
-    min_ = Decimal(f"{int(integer_part[-4:-2]) / 60}")
-    deg = Decimal(f"{float(int(integer_part[:-4]))}")
-    if decimal_obj:
-        return round(deg + min_ + sec, digits)
-    return float(round(deg + min_ + sec, digits))
+    sec = (int(integer_part[-2:]) + micro_sec) / 3600 * SCALE
+    min_ = (int(integer_part[-4:-2]) / 60) * SCALE
+    deg = int(integer_part[:-4]) * SCALE
+    return (deg + min_ + sec) / SCALE
 
 
-def dms_to_degree_lonlat(
-    lon: float,  #
-    lat: float,
-    digits: int = 9,
-    decimal_obj: bool = False,
-) -> XY:
+def dms_to_degree_lonlat(lon: float, lat: float) -> XY:
     """
     ## Summary:
         度分秒経緯度を10進法経緯度に変換する関数
@@ -91,19 +80,39 @@ def dms_to_degree_lonlat(
             度分秒経緯度
         lat (float):
             度分秒経緯度
-        digits (int):
-            小数点以下の桁数
-        decimal_obj (bool):
-            Decimal型で返すかどうか
     Returns:
         XY(NamedTuple):
             10進法経緯度
-            - x: float | Decimal
-            - y: float | Decimal
+            - x: float
+            - y: float
     Example:
         >>> dms_to_degree_lonlat(140516.27814, 36103600.00000)
         (140.087855042, 36.103774792)
     """
-    deg_lon = dms_to_degree(lon, digits, decimal_obj)
-    deg_lat = dms_to_degree(lat, digits, decimal_obj)
+    deg_lon = dms_to_degree(lon)
+    deg_lat = dms_to_degree(lat)
     return XY(x=deg_lon, y=deg_lat)
+
+
+def str_dms_to_degree(
+    degrees: int,  #
+    minutes: int,
+    seconds: float,
+) -> float:
+    """
+    ## Summary:
+        度分秒経緯度を10進法経緯度に変換する関数
+    Args:
+        degrees (int):
+            度
+        minutes (int):
+            分
+        seconds (float):
+            秒
+    Returns:
+        float:
+            10進法経緯度
+    """
+    minutes = int(minutes * (SCALE * 10) / 60)
+    seconds = int(seconds * (SCALE * 10) / 3600)
+    return degrees + round((minutes + seconds) / (SCALE * 10), DIGITS)
