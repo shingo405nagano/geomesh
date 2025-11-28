@@ -2,24 +2,23 @@
 日本のメッシュコードに関するクラスと関数の定義
 """
 
-import decimal
 import math
-from decimal import ROUND_DOWN, Decimal
+from decimal import Decimal
 from typing import NamedTuple
 
 import geopandas as gpd
+import numpy as np
 import shapely
 import yaml
 
 from .data import Bounds
 from .formatter import type_checker_float, valid_names
-from .geometries import dms_to_degree_lonlat
+from .geometries import dms_to_degree_lonlat, str_dms_to_degree
 
-decimal.getcontext().prec = 13
-decimal.getcontext().rounding = ROUND_DOWN
-
+global DIGITS
+DIGITS = 10
 global SCALE
-SCALE = 10**10
+SCALE = 10**DIGITS
 
 
 class _Cds(NamedTuple):
@@ -118,6 +117,32 @@ class MeshCodeJP(object):
             lon_std=standard_lon,
             lat_std=standard_lat,
         )
+
+    def get_mesh_code(self, mesh_name: str) -> str:
+        """
+        ## Summary:
+            指定されたメッシュ名に対応するメッシュコードを取得する関数
+        Args:
+            mesh_name (str):
+                取得したいメッシュの名前。'1st', '2nd', 'standard', 'half', 'quarter'のいずれか。
+        Returns:
+            str:
+                指定されたメッシュ名に対応するメッシュコード
+        """
+        if mesh_name == "1st":
+            return self.first_mesh_code
+        elif mesh_name == "2nd":
+            return self.secandary_mesh_code
+        elif mesh_name == "standard":
+            return self.standard_mesh_code
+        elif mesh_name == "half":
+            return self.half_mesh_code
+        elif mesh_name == "quarter":
+            return self.quarter_mesh_code
+        else:
+            raise ValueError(
+                f"mesh_name must be one of ['1st', '2nd', 'standard', 'half', 'quarter'], got: {mesh_name}"
+            )
 
     def first_mesh(self) -> Bounds:
         """
@@ -396,51 +421,38 @@ def generate_jpmesh(
     # 範囲の検証
     if x_min >= x_max or y_min >= y_max:
         raise ValueError("Invalid range: min values must be less than max values")
-    # 範囲をメッシュの刻みに合わせて調整
-    bounds = _resize_mesh(x_min, y_min, x_max, y_max, mesh_name)
     # メッシュのステップ値を取得
     steps = _get_step(mesh_name)
-    step_lon = steps["lon"]
-    step_lat = steps["lat"]
-    # メッシュコードとジオメトリのリストを初期化
-    mesh_dict = {}  # 重複チェック用辞書
-    # 指定された範囲内でメッシュコードを生成
-    lon = bounds.x_min
-    while lon < bounds.x_max:
-        lat = bounds.y_min
-        while lat < bounds.y_max:
-            mesh = MeshCodeJP(lon, lat)
-            if mesh_name == "1st":
-                mesh_code = mesh.first_mesh_code
-                mesh_bounds = mesh.first_mesh()
-            elif mesh_name == "2nd":
-                mesh_code = mesh.secandary_mesh_code
-                mesh_bounds = mesh.secandary_mesh()
-            elif mesh_name == "standard":
-                mesh_code = mesh.standard_mesh_code
-                mesh_bounds = mesh.standard_mesh()
-            elif mesh_name == "half":
-                mesh_code = mesh.half_mesh_code
-                mesh_bounds = mesh.half_mesh()
-            elif mesh_name == "quarter":
-                mesh_code = mesh.quarter_mesh_code
-                mesh_bounds = mesh.quarter_mesh()
-            else:
-                raise ValueError(
-                    f"mesh_name must be one of ['1st', '2nd', 'standard', 'half', 'quarter'], got: {mesh_name}"
-                )
-            # 重複チェック：まだ追加されていないメッシュコードのみ追加
-            if mesh_code not in mesh_dict:
-                mesh_dict[mesh_code] = shapely.box(*mesh_bounds)
-            lat += step_lat
-        lon += step_lon
+    step_lon = int(steps["lon"] * SCALE)
+    step_lat = int(steps["lat"] * SCALE)
+    # 範囲をメッシュの刻みに合わせて調整、そして整数にスケール変換
+    _bounds = _resize_mesh(x_min, y_min, x_max, y_max, mesh_name)
+    bounds = Bounds(*[int(v * SCALE) for v in _bounds])
+    # Numpyでmeshgridを作成
+    x_sequential = np.arange(
+        start=bounds.x_min, stop=bounds.x_max + step_lon, step=step_lon
+    ).round(DIGITS)
+    y_sequential = np.arange(
+        start=bounds.y_min, stop=bounds.y_max + step_lat, step=step_lat
+    )[::-1].round(DIGITS)
+    mesh_code_lst = []
+    geoms = []
+    for x_min, x_max in zip(x_sequential[:-1], x_sequential[1:]):
+        for y_min, y_max in zip(y_sequential[:-1], y_sequential[1:]):
+            # Scaleを戻して境界を作成
+            mesh_bounds = Bounds(*[v / SCALE for v in [x_min, y_min, x_max, y_max]])
+            geom = shapely.box(*mesh_bounds)
+            # MeshCodeJPオブジェクトを作成してメッシュコードを取得
+            cnt_x = (mesh_bounds.x_max + mesh_bounds.x_min) / 2
+            cnt_y = (mesh_bounds.y_max + mesh_bounds.y_min) / 2
+            mesh_obj = MeshCodeJP(cnt_x, cnt_y)
+            mesh_code = mesh_obj.get_mesh_code(mesh_name)
+            mesh_code_lst.append(mesh_code)
+            geoms.append(geom)
 
-    # 辞書からリストに変換
-    mesh_codes = list(mesh_dict.keys())
-    geometries = list(mesh_dict.values())
     # GeoDataFrameを作成
     gdf = gpd.GeoDataFrame(
-        data={"mesh_code": mesh_codes}, geometry=geometries, crs="EPSG:4326"
+        data={"mesh_code": mesh_code_lst}, geometry=geoms, crs="EPSG:4326"
     )
     return gdf
 
@@ -459,24 +471,24 @@ def _get_step(mesh_name: str) -> dict[str, float]:
     """
     steps = {
         "1st": {
-            "lon": 1.0,
-            "lat": 40 / 60,  # 40分
+            "lon": str_dms_to_degree(1, 0, 0),  # 1度
+            "lat": str_dms_to_degree(0, 40, 0),  # 40分
         },
         "2nd": {
-            "lon": 7.5 / 60,  # 7.5分
-            "lat": 5 / 60,  # 5分
+            "lon": str_dms_to_degree(0, 7, 30),  # 7.5分
+            "lat": str_dms_to_degree(0, 5, 0),  # 5分
         },
         "standard": {
-            "lon": 0.75 / 60,  # 45秒
-            "lat": 0.5 / 60,  # 30秒
+            "lon": str_dms_to_degree(0, 0, 45),  # 45秒
+            "lat": str_dms_to_degree(0, 0, 30),  # 30秒
         },
         "half": {
-            "lon": 0.375 / 60 / 3,  # 22.5秒の1/3 = 7.5秒
-            "lat": 0.25 / 60 / 3,  # 15秒の1/3 = 5秒
+            "lon": str_dms_to_degree(0, 0, 22.5),  # 22.5秒
+            "lat": str_dms_to_degree(0, 0, 15),  # 15秒
         },
         "quarter": {
-            "lon": 0.1875 / 60 / 10,  # 11.25秒の1/10 = 約1.125秒
-            "lat": 0.125 / 60 / 10,  # 7.5秒の1/10 = 約0.75秒
+            "lon": str_dms_to_degree(0, 0, 11.25),  # 11.25秒
+            "lat": str_dms_to_degree(0, 0, 7.5),  # 7.5秒
         },
     }
     if mesh_name not in steps:
@@ -489,7 +501,7 @@ def _get_step(mesh_name: str) -> dict[str, float]:
 @valid_names(
     arg_index=4,
     kward="mesh_name",
-    valid_names=["1st", "2nd", "standard", "half", "quarter"],
+    valid_names=["1st", "2nd", "standard", "half", "quarter", "eighth"],
 )
 def _resize_mesh(
     x_min: float, y_min: float, x_max: float, y_max: float, mesh_name: str
